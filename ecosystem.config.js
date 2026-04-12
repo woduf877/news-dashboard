@@ -18,5 +18,16 @@ module.exports = {
       out_file: './logs/out.log',
       merge_logs: true,
     },
+    {
+      name: 'cloudflare-tunnel',
+      script: 'cloudflared',
+      args: 'tunnel run news-dashboard',
+      interpreter: 'none',
+      autorestart: true,
+      watch: false,
+      log_date_format: 'YYYY-MM-DD HH:mm:ss',
+      error_file: './logs/tunnel-error.log',
+      out_file: './logs/tunnel-out.log',
+    },
   ],
 };
