@@ -6,7 +6,15 @@ const {
   getCategoryCounts,
   getCrawlLogs,
   getLastCrawlTime,
+  getWordCloud,
+  getHeatmapData,
+  getTopKeywords,
+  getTrendData,
+  getAllArticlesForKeywords,
+  keywordStatsEmpty,
+  upsertKeywords,
 } = require('./db');
+const { extractFromArticles } = require('./keywords');
 const { runCrawl, NEWS_SOURCES } = require('./crawler');
 const { startScheduler } = require('./scheduler');
 
@@ -69,6 +77,36 @@ app.post('/api/crawl', async (req, res) => {
   runCrawl().catch(console.error);
 });
 
+// ─── 키워드 분석 API ──────────────────────────────────
+
+// 워드 클라우드 데이터
+app.get('/api/analytics/wordcloud', (req, res) => {
+  const { category = 'all', days = 30, limit = 80 } = req.query;
+  const data = getWordCloud({ category, days: Number(days), limit: Number(limit) });
+  res.json({ ok: true, data });
+});
+
+// 히트맵 그리드 데이터 (keyword × date)
+app.get('/api/analytics/heatmap', (req, res) => {
+  const { category = 'all', days = 14, topN = 20 } = req.query;
+  const data = getHeatmapData({ category, days: Number(days), topN: Number(topN) });
+  res.json({ ok: true, data });
+});
+
+// TOP 10 키워드 (일별 / 주별 / 월별)
+app.get('/api/analytics/top', (req, res) => {
+  const { category = 'all', period = 'daily' } = req.query;
+  const data = getTopKeywords({ category, period });
+  res.json({ ok: true, data });
+});
+
+// 트렌드 라인 (상위 키워드 일별 추이)
+app.get('/api/analytics/trends', (req, res) => {
+  const { category = 'all', days = 30 } = req.query;
+  const data = getTrendData({ category, days: Number(days) });
+  res.json({ ok: true, data });
+});
+
 // React 라우팅 폴백 (SPA)
 app.get('*', (req, res) => {
   const index = path.join(STATIC_DIR, 'index.html');
@@ -105,5 +143,12 @@ app.listen(PORT, () => {
   if (sample.length === 0) {
     console.log('[server] 데이터 없음 — 초기 크롤 실행');
     runCrawl().catch(console.error);
+  } else if (keywordStatsEmpty()) {
+    // 기사는 있지만 키워드 통계가 없으면 기존 기사로 재계산
+    console.log('[server] 키워드 통계 없음 — 기존 기사로 재계산 중…');
+    const articles = getAllArticlesForKeywords();
+    const extracted = extractFromArticles(articles);
+    upsertKeywords(extracted);
+    console.log(`[server] 키워드 재계산 완료 (기사 ${articles.length}건)`);
   }
 });

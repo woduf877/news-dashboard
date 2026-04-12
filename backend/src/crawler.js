@@ -1,5 +1,6 @@
 const Parser = require('rss-parser');
-const { startCrawl, finishCrawl, saveArticles, cleanOldArticles } = require('./db');
+const { startCrawl, finishCrawl, saveArticles, cleanOldArticles, upsertKeywords } = require('./db');
+const { extractFromArticles } = require('./keywords');
 
 const parser = new Parser({
   timeout: 15000,
@@ -92,6 +93,11 @@ async function runCrawl() {
   try {
     saved = saveArticles(results, crawlId);
     const deleted = cleanOldArticles();
+
+    // 키워드 추출 및 저장
+    const extracted = extractFromArticles(results);
+    upsertKeywords(extracted);
+
     finishCrawl(crawlId, saved);
     console.log(`[crawler] 완료 — 신규 ${saved}건 저장, 오래된 기사 ${deleted}건 삭제`);
   } catch (err) {

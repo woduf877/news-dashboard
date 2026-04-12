@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import Header from './components/Header';
 import CategoryFilter from './components/CategoryFilter';
 import NewsGrid from './components/NewsGrid';
+import Analytics from './pages/Analytics';
 
 const CATEGORY_LABELS = {
   all:        '전체',
@@ -13,7 +14,13 @@ const CATEGORY_LABELS = {
   sports:     '스포츠',
 };
 
+const NAV_TABS = [
+  { key: 'news',      label: '📰 뉴스' },
+  { key: 'analytics', label: '📊 키워드 분석' },
+];
+
 export default function App() {
+  const [tab, setTab]               = useState('news');
   const [articles, setArticles]     = useState([]);
   const [categories, setCategories] = useState([]);
   const [status, setStatus]         = useState(null);
@@ -24,12 +31,10 @@ export default function App() {
     window.matchMedia('(prefers-color-scheme: dark)').matches
   );
 
-  // 다크모드 적용
   useEffect(() => {
     document.documentElement.classList.toggle('dark', dark);
   }, [dark]);
 
-  // 기사 불러오기
   const fetchArticles = useCallback(async (category = activeCategory) => {
     setLoading(true);
     try {
@@ -43,7 +48,6 @@ export default function App() {
     }
   }, [activeCategory]);
 
-  // 카테고리 불러오기
   const fetchCategories = useCallback(async () => {
     try {
       const res = await fetch('/api/categories');
@@ -54,7 +58,6 @@ export default function App() {
     }
   }, []);
 
-  // 상태 불러오기
   const fetchStatus = useCallback(async () => {
     try {
       const res = await fetch('/api/status');
@@ -65,24 +68,20 @@ export default function App() {
     }
   }, []);
 
-  // 초기 로드
   useEffect(() => {
     fetchArticles(activeCategory);
     fetchCategories();
     fetchStatus();
   }, []);
 
-  // 카테고리 변경
   const handleCategoryChange = (cat) => {
     setActiveCategory(cat);
     fetchArticles(cat);
   };
 
-  // 수동 크롤
   const handleCrawl = async () => {
     setCrawling(true);
     await fetch('/api/crawl', { method: 'POST' });
-    // 5초 후 데이터 갱신
     setTimeout(async () => {
       await Promise.all([fetchArticles(activeCategory), fetchCategories(), fetchStatus()]);
       setCrawling(false);
@@ -99,19 +98,39 @@ export default function App() {
         crawling={crawling}
       />
 
-      <main className="flex-1 max-w-screen-xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-6">
-        <CategoryFilter
-          categories={categories}
-          active={activeCategory}
-          labels={CATEGORY_LABELS}
-          onChange={handleCategoryChange}
-        />
+      {/* 탭 네비게이션 */}
+      <div className="border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
+        <div className="max-w-screen-xl mx-auto px-4 sm:px-6 lg:px-8 flex gap-0">
+          {NAV_TABS.map(({ key, label }) => (
+            <button
+              key={key}
+              onClick={() => setTab(key)}
+              className={`px-5 py-3 text-sm font-medium border-b-2 transition-all ${
+                tab === key
+                  ? 'border-blue-600 text-blue-600 dark:text-blue-400'
+                  : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
 
-        <NewsGrid
-          articles={articles}
-          loading={loading}
-          category={activeCategory}
-        />
+      <main className="flex-1">
+        {tab === 'news' ? (
+          <div className="max-w-screen-xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-6">
+            <CategoryFilter
+              categories={categories}
+              active={activeCategory}
+              labels={CATEGORY_LABELS}
+              onChange={handleCategoryChange}
+            />
+            <NewsGrid articles={articles} loading={loading} />
+          </div>
+        ) : (
+          <Analytics />
+        )}
       </main>
 
       <footer className="text-center text-xs text-gray-400 dark:text-gray-600 py-4">
