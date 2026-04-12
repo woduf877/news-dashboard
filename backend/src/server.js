@@ -1,0 +1,109 @@
+const express = require('express');
+const cors = require('cors');
+const path = require('path');
+const {
+  getArticles,
+  getCategoryCounts,
+  getCrawlLogs,
+  getLastCrawlTime,
+} = require('./db');
+const { runCrawl, NEWS_SOURCES } = require('./crawler');
+const { startScheduler } = require('./scheduler');
+
+const app = express();
+const PORT = process.env.PORT || 3001;
+
+app.use(cors());
+app.use(express.json());
+
+// 프로덕션: 빌드된 React 정적 파일 서빙
+const STATIC_DIR = path.join(__dirname, '..', 'public');
+app.use(express.static(STATIC_DIR));
+
+// ─── API ──────────────────────────────────────────────
+
+// 기사 목록
+app.get('/api/news', (req, res) => {
+  const { category, limit = 60, offset = 0, date } = req.query;
+  const articles = getArticles({
+    category,
+    limit: Math.min(Number(limit), 200),
+    offset: Number(offset),
+    date,
+  });
+  res.json({ ok: true, data: articles });
+});
+
+// 카테고리별 기사 수
+app.get('/api/categories', (req, res) => {
+  const counts = getCategoryCounts();
+  // 전체 합계 추가
+  const total = counts.reduce((sum, c) => sum + c.count, 0);
+  res.json({ ok: true, data: [{ category: 'all', count: total }, ...counts] });
+});
+
+// 크롤 로그
+app.get('/api/crawl-logs', (req, res) => {
+  const logs = getCrawlLogs(20);
+  res.json({ ok: true, data: logs });
+});
+
+// 마지막 크롤 시각 + 다음 크롤 예정
+app.get('/api/status', (req, res) => {
+  const last = getLastCrawlTime();
+  const now = new Date();
+  const nextTimes = getNextCrawlTimes(now);
+  res.json({
+    ok: true,
+    data: {
+      lastCrawlAt: last?.finished_at || null,
+      nextCrawlAt: nextTimes,
+      sources: NEWS_SOURCES.length,
+    },
+  });
+});
+
+// 수동 크롤 트리거
+app.post('/api/crawl', async (req, res) => {
+  res.json({ ok: true, message: '크롤 시작됨' });
+  runCrawl().catch(console.error);
+});
+
+// React 라우팅 폴백 (SPA)
+app.get('*', (req, res) => {
+  const index = path.join(STATIC_DIR, 'index.html');
+  res.sendFile(index, (err) => {
+    if (err) res.status(404).json({ error: 'Not found' });
+  });
+});
+
+// ─── 다음 크롤 예정 시각 계산 ─────────────────────────
+
+function getNextCrawlTimes(now) {
+  const kst = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
+  const results = [];
+
+  [8, 13].forEach((hour) => {
+    const next = new Date(kst);
+    next.setHours(hour, 0, 0, 0);
+    if (next <= kst) next.setDate(next.getDate() + 1);
+    results.push(next.toISOString());
+  });
+
+  return results.sort();
+}
+
+// ─── 서버 시작 ───────────────────────────────────────
+
+app.listen(PORT, () => {
+  console.log(`\n뉴스 대시보드 서버 실행 중 → http://localhost:${PORT}`);
+  startScheduler();
+
+  // 서버 시작 시 기사가 없으면 즉시 첫 크롤 실행
+  const { getArticles: _ga } = require('./db');
+  const sample = _ga({ limit: 1 });
+  if (sample.length === 0) {
+    console.log('[server] 데이터 없음 — 초기 크롤 실행');
+    runCrawl().catch(console.error);
+  }
+});
