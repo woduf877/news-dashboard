@@ -47,6 +47,20 @@ db.exec(`
 
   CREATE INDEX IF NOT EXISTS idx_kw_date     ON keyword_stats(date DESC);
   CREATE INDEX IF NOT EXISTS idx_kw_category ON keyword_stats(category);
+
+  CREATE TABLE IF NOT EXISTS market_analysis (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    analyzed_at   TEXT DEFAULT (datetime('now')),
+    window_from   TEXT,
+    window_to     TEXT,
+    article_count INTEGER DEFAULT 0,
+    status        TEXT DEFAULT 'pending',
+    error         TEXT,
+    gemini_json   TEXT,
+    groq_json     TEXT,
+    agreement     TEXT,
+    agreement_score REAL
+  );
 `);
 
 // 크롤 시작 기록
@@ -284,6 +298,66 @@ function keywordStatsEmpty() {
   return db.prepare(`SELECT COUNT(*) as cnt FROM keyword_stats`).get().cnt === 0;
 }
 
+// ─── AI 분석 결과 저장/조회 ──────────────────────────
+
+function createAnalysis(windowFrom, windowTo, articleCount) {
+  const info = db.prepare(`
+    INSERT INTO market_analysis (window_from, window_to, article_count, status)
+    VALUES (?, ?, ?, 'pending')
+  `).run(windowFrom, windowTo, articleCount);
+  return info.lastInsertRowid;
+}
+
+function saveAnalysisResult(id, { geminiResult, groqResult }) {
+  const agreement      = groqResult?.agreement || null;
+  const agreementScore = groqResult?.agreementScore ?? null;
+  db.prepare(`
+    UPDATE market_analysis SET
+      status = 'success',
+      gemini_json = ?, groq_json = ?,
+      agreement = ?, agreement_score = ?
+    WHERE id = ?
+  `).run(
+    geminiResult ? JSON.stringify(geminiResult) : null,
+    groqResult   ? JSON.stringify(groqResult)   : null,
+    agreement, agreementScore,
+    id
+  );
+}
+
+function saveAnalysisError(id, error) {
+  db.prepare(`
+    UPDATE market_analysis SET status = 'error', error = ? WHERE id = ?
+  `).run(error, id);
+}
+
+function getLatestAnalysis() {
+  const row = db.prepare(`
+    SELECT * FROM market_analysis
+    WHERE status = 'success'
+    ORDER BY id DESC LIMIT 1
+  `).get();
+  if (!row) return null;
+  return {
+    id:             row.id,
+    analyzed_at:    row.analyzed_at,
+    window_from:    row.window_from,
+    window_to:      row.window_to,
+    article_count:  row.article_count,
+    agreement:      row.agreement,
+    agreement_score: row.agreement_score,
+    gemini: row.gemini_json ? JSON.parse(row.gemini_json) : null,
+    groq:   row.groq_json   ? JSON.parse(row.groq_json)   : null,
+  };
+}
+
+function getAnalysisStatus() {
+  return db.prepare(`
+    SELECT id, status, error, analyzed_at, model, article_count
+    FROM market_analysis ORDER BY id DESC LIMIT 1
+  `).get();
+}
+
 // 증시 시간창 기사 조회
 function getMarketWindowArticles(fromISO, toISO) {
   return db.prepare(`
@@ -326,4 +400,9 @@ module.exports = {
   keywordStatsEmpty,
   getMarketWindowArticles,
   getMarketHourlyCount,
+  createAnalysis,
+  saveAnalysisResult,
+  saveAnalysisError,
+  getLatestAnalysis,
+  getAnalysisStatus,
 };

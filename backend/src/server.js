@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
@@ -15,9 +16,13 @@ const {
   upsertKeywords,
   getMarketWindowArticles,
   getMarketHourlyCount,
+  getLatestAnalysis,
+  getAnalysisStatus,
 } = require('./db');
 const { extractFromArticles, computeMarketKeywords, getMarketWindow } = require('./keywords');
 const { runCrawl, NEWS_SOURCES, KOREA_MARKET_SOURCES } = require('./crawler');
+const { runMarketAnalysis } = require('./marketAnalyzer');
+const { isConfigured } = require('./aiAgent');
 const { startScheduler } = require('./scheduler');
 
 const app = express();
@@ -109,44 +114,45 @@ app.get('/api/analytics/trends', (req, res) => {
   res.json({ ok: true, data });
 });
 
-// ─── 한국 증시 키워드 API ─────────────────────────────
+// ─── 한국 증시 AI 분석 API ────────────────────────────
 
-app.get('/api/market/keywords', (req, res) => {
-  const { topN = 50, lang } = req.query;
-  const window = getMarketWindow();
+// 최신 AI 분석 결과 조회
+app.get('/api/market/analysis', (req, res) => {
+  const analysis = getLatestAnalysis();
+  const status   = getAnalysisStatus();
+  const window   = getMarketWindow();
   const articles = getMarketWindowArticles(window.from, window.to);
-
-  let keywords = computeMarketKeywords(articles, Number(topN));
-  if (lang === 'ko') keywords = keywords.filter(k => k.lang === 'ko');
-  if (lang === 'en') keywords = keywords.filter(k => k.lang === 'en');
 
   res.json({
     ok: true,
     data: {
-      keywords,
+      analysis,          // 최신 성공 분석 (없으면 null)
+      status,            // 가장 최근 작업 상태 (pending/success/error)
       window,
       articleCount: articles.length,
-      categoryBreakdown: summarizeByCategory(articles),
+      aiConfigured: isConfigured(),
     },
   });
+});
+
+// AI 분석 수동 트리거 (비동기)
+app.post('/api/market/analyze', (req, res) => {
+  if (!isConfigured()) {
+    return res.status(400).json({
+      ok: false,
+      error: 'GEMINI_API_KEY 또는 GROQ_API_KEY가 backend/.env에 설정되지 않았습니다',
+    });
+  }
+  res.json({ ok: true, message: 'AI 분석 시작됨' });
+  runMarketAnalysis().catch(e => console.error('[api] 분석 오류:', e.message));
 });
 
 // 시간별 기사 수 히스토그램
 app.get('/api/market/hourly', (req, res) => {
   const window = getMarketWindow();
-  const rows = getMarketHourlyCount(window.from, window.to);
+  const rows   = getMarketHourlyCount(window.from, window.to);
   res.json({ ok: true, data: rows, window });
 });
-
-function summarizeByCategory(articles) {
-  const counts = {};
-  for (const a of articles) {
-    counts[a.category] = (counts[a.category] || 0) + 1;
-  }
-  return Object.entries(counts)
-    .sort((a, b) => b[1] - a[1])
-    .map(([category, count]) => ({ category, count }));
-}
 
 // React 라우팅 폴백 (SPA) — API 라우트 이후에 위치해야 함
 app.get('*', (req, res) => {
