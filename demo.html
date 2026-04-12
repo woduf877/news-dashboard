@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>글로벌 뉴스 대시보드 — 미리보기</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  :root{
+    --bg:#f9fafb;--surface:#fff;--border:#e5e7eb;
+    --text:#111827;--text2:#6b7280;--text3:#9ca3af;
+    --blue:#2563eb;--blue-l:#dbeafe;--blue-d:#1e40af;
+  }
+  body{font-family:'Apple SD Gothic Neo',Inter,system-ui,sans-serif;background:var(--bg);color:var(--text);font-size:14px}
+
+  /* ── HEADER ── */
+  header{
+    position:sticky;top:0;z-index:50;
+    background:rgba(255,255,255,.85);backdrop-filter:blur(12px);
+    border-bottom:1px solid var(--border);
+    padding:0 24px;height:60px;display:flex;align-items:center;justify-content:space-between;
+  }
+  .logo{display:flex;align-items:center;gap:10px}
+  .logo-icon{font-size:24px}
+  .logo-title{font-size:15px;font-weight:700}
+  .logo-sub{font-size:11px;color:var(--text3)}
+  .header-meta{display:flex;align-items:center;gap:20px;font-size:11px;color:var(--text2)}
+  .header-meta strong{color:var(--text)}
+  .btn-crawl{
+    display:flex;align-items:center;gap:6px;
+    padding:6px 14px;border-radius:8px;border:none;cursor:pointer;
+    background:var(--blue);color:#fff;font-size:12px;font-weight:500;
+  }
+
+  /* ── NAV TABS ── */
+  nav{background:#fff;border-bottom:1px solid var(--border);padding:0 24px;display:flex}
+  nav button{
+    padding:12px 20px;border:none;background:none;cursor:pointer;
+    font-size:13px;font-weight:500;color:var(--text2);
+    border-bottom:2px solid transparent;transition:.15s;
+  }
+  nav button.active{color:var(--blue);border-bottom-color:var(--blue)}
+
+  /* ── MAIN ── */
+  main{max-width:1280px;margin:0 auto;padding:24px 24px 48px}
+
+  /* ── CATEGORY PILLS ── */
+  .cats{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:24px}
+  .cat{
+    display:flex;align-items:center;gap:6px;
+    padding:6px 14px;border-radius:999px;border:1px solid var(--border);
+    font-size:12px;font-weight:500;color:var(--text2);cursor:pointer;
+    background:#fff;transition:.15s;
+  }
+  .cat.active{background:var(--blue);color:#fff;border-color:var(--blue);box-shadow:0 2px 8px #2563eb33}
+  .cat-count{font-size:11px;font-weight:400;background:#f3f4f6;color:var(--text2);padding:1px 7px;border-radius:999px}
+  .cat.active .cat-count{background:#1d4ed8;color:#fff}
+
+  /* ── STAT CARDS ── */
+  .stat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:24px}
+  .stat-card{background:#fff;border:1px solid var(--border);border-radius:16px;padding:20px}
+  .stat-label{font-size:11px;color:var(--text3);margin-bottom:4px}
+  .stat-value{font-size:24px;font-weight:700;color:var(--text)}
+  .stat-sub{font-size:11px;color:var(--text3);margin-top:4px}
+
+  /* ── SECTION CARD ── */
+  .card{background:#fff;border:1px solid var(--border);border-radius:16px;padding:24px;margin-bottom:24px}
+  .card-title{font-size:13px;font-weight:600;color:var(--text2);margin-bottom:16px}
+
+  /* ── WORD CLOUD ── */
+  .wordcloud{
+    display:flex;flex-wrap:wrap;gap:8px 12px;
+    align-items:center;justify-content:center;
+    padding:20px;line-height:2;
+  }
+  .wordcloud span{cursor:default;transition:transform .15s;font-weight:600}
+  .wordcloud span:hover{transform:scale(1.12)}
+
+  /* ── TWO COL ── */
+  .two-col{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:24px}
+
+  /* ── PERIOD TABS ── */
+  .period-tabs{display:flex;gap:4px;margin-bottom:16px}
+  .period-tab{
+    padding:4px 12px;border-radius:999px;border:none;cursor:pointer;font-size:11px;font-weight:500;
+    background:#f3f4f6;color:var(--text2);transition:.15s;
+  }
+  .period-tab.active{background:var(--blue);color:#fff}
+
+  /* ── HEATMAP GRID ── */
+  .heatmap-wrap{overflow-x:auto}
+  .heatmap-table{border-collapse:separate;border-spacing:3px;font-size:11px}
+  .heatmap-table th{color:var(--text3);font-weight:500;white-space:nowrap;padding-right:12px;text-align:left;position:sticky;left:0;background:#fff}
+  .heatmap-table td.kw{color:var(--text2);font-weight:600;white-space:nowrap;padding-right:12px;position:sticky;left:0;background:#fff}
+  .cell{width:30px;height:22px;border-radius:4px;display:block}
+  .c0{background:#f3f4f6}
+  .c1{background:#dbeafe}
+  .c2{background:#93c5fd}
+  .c3{background:#3b82f6}
+  .c4{background:#1d4ed8}
+  .legend{display:flex;align-items:center;gap:4px;margin-top:12px;font-size:11px;color:var(--text3)}
+  .legend-cell{width:24px;height:16px;border-radius:3px}
+
+  /* ── NEWS GRID ── */
+  .news-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+  .news-card{
+    background:#fff;border:1px solid var(--border);border-radius:16px;padding:20px;
+    cursor:pointer;transition:all .2s;
+  }
+  .news-card:hover{box-shadow:0 8px 24px #0001;transform:translateY(-2px)}
+  .news-meta{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+  .news-badge{font-size:10px;font-weight:600;padding:3px 10px;border-radius:999px}
+  .badge-world{background:#dbeafe;color:#1d4ed8}
+  .badge-technology{background:#ede9fe;color:#5b21b6}
+  .badge-business{background:#dcfce7;color:#15803d}
+  .badge-science{background:#cffafe;color:#0e7490}
+  .badge-health{background:#fee2e2;color:#b91c1c}
+  .badge-sports{background:#fed7aa;color:#c2410c}
+  .news-src{font-size:11px;color:var(--text3)}
+  .news-title{font-size:13px;font-weight:600;line-height:1.45;color:var(--text);margin-bottom:8px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+  .news-desc{font-size:11px;color:var(--text2);line-height:1.6;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;margin-bottom:12px}
+  .news-time{font-size:11px;color:var(--text3)}
+
+  footer{text-align:center;font-size:11px;color:var(--text3);padding:24px}
+
+  @media(max-width:900px){
+    .stat-grid{grid-template-columns:1fr 1fr}
+    .two-col{grid-template-columns:1fr}
+    .news-grid{grid-template-columns:1fr 1fr}
+    .header-meta{display:none}
+  }
+  @media(max-width:600px){
+    .news-grid{grid-template-columns:1fr}
+    .stat-grid{grid-template-columns:1fr 1fr}
+  }
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header>
+  <div class="logo">
+    <span class="logo-icon">📰</span>
+    <div>
+      <div class="logo-title">글로벌 뉴스</div>
+      <div class="logo-sub">World News Dashboard</div>
+    </div>
+  </div>
+  <div class="header-meta">
+    <span>마지막 업데이트 <strong>4월 12일 08:00</strong></span>
+    <span>다음 업데이트 <strong>13:00</strong></span>
+    <span>소스 <strong>20개</strong></span>
+  </div>
+  <button class="btn-crawl">↻ 지금 수집</button>
+</header>
+
+<!-- NAV TABS -->
+<nav>
+  <button onclick="showTab('news')" id="tab-news" class="active">📰 뉴스</button>
+  <button onclick="showTab('analytics')" id="tab-analytics">📊 키워드 분석</button>
+</nav>
+
+<main>
+
+  <!-- ══════════════ 뉴스 탭 ══════════════ -->
+  <div id="page-news">
+    <div class="cats">
+      <div class="cat active">🌐 전체 <span class="cat-count">320</span></div>
+      <div class="cat">🗺️ 세계 <span class="cat-count">60</span></div>
+      <div class="cat">💻 기술 <span class="cat-count">90</span></div>
+      <div class="cat">📈 비즈니스 <span class="cat-count">40</span></div>
+      <div class="cat">🔬 과학 <span class="cat-count">50</span></div>
+      <div class="cat">🏥 건강 <span class="cat-count">40</span></div>
+      <div class="cat">⚽ 스포츠 <span class="cat-count">40</span></div>
+    </div>
+
+    <p style="font-size:11px;color:var(--text3);margin-bottom:16px">총 <strong style="color:var(--text2)">320</strong>건</p>
+
+    <div class="news-grid">
+      <div class="news-card">
+        <div class="news-meta"><span class="news-badge badge-world">세계</span><span class="news-src">BBC World</span></div>
+        <div class="news-title">Iran Nuclear Talks Resume as Tensions Escalate in the Middle East</div>
+        <div class="news-desc">Senior diplomats from Iran and Western nations gathered in Vienna for the latest round of nuclear negotiations, amid growing concerns about regional stability.</div>
+        <div class="news-time">🕐 2시간 전</div>
+      </div>
+      <div class="news-card">
+        <div class="news-meta"><span class="news-badge badge-technology">기술</span><span class="news-src">TechCrunch</span></div>
+        <div class="news-title">OpenAI Releases GPT-5 With Unprecedented Reasoning Capabilities</div>
+        <div class="news-desc">The latest model demonstrates dramatic improvements in complex reasoning tasks, coding, and multimodal understanding compared to its predecessors.</div>
+        <div class="news-time">🕐 3시간 전</div>
+      </div>
+      <div class="news-card">
+        <div class="news-meta"><span class="news-badge badge-science">과학</span><span class="news-src">NASA</span></div>
+        <div class="news-title">NASA's Artemis Mission Discovers Water Ice Deposits Near Lunar South Pole</div>
+        <div class="news-desc">Scientists confirm significant quantities of water ice in permanently shadowed craters, a breakthrough for future lunar colonization efforts.</div>
+        <div class="news-time">🕐 5시간 전</div>
+      </div>
+      <div class="news-card">
+        <div class="news-meta"><span class="news-badge badge-business">비즈니스</span><span class="news-src">CNBC</span></div>
+        <div class="news-title">Federal Reserve Signals Potential Rate Cuts Amid Cooling Inflation Data</div>
+        <div class="news-desc">Fed Chair indicated that the central bank may begin easing monetary policy as early as Q3, following three consecutive months of declining inflation figures.</div>
+        <div class="news-time">🕐 6시간 전</div>
+      </div>
+      <div class="news-card">
+        <div class="news-meta"><span class="news-badge badge-health">건강</span><span class="news-src">BBC Health</span></div>
+        <div class="news-title">Breakthrough Cancer Vaccine Shows 90% Efficacy in Phase 3 Trial</div>
+        <div class="news-desc">An mRNA-based personalized cancer vaccine demonstrated remarkable success rates in the largest clinical trial to date, covering 12 different cancer types.</div>
+        <div class="news-time">🕐 7시간 전</div>
+      </div>
+      <div class="news-card">
+        <div class="news-meta"><span class="news-badge badge-technology">기술</span><span class="news-src">The Verge</span></div>
+        <div class="news-title">Apple Unveils M4 Ultra Chip With 200% Performance Boost Over M3</div>
+        <div class="news-desc">The new silicon, built on TSMC's 3nm process, promises to revolutionize professional workflows including 3D rendering and AI model training.</div>
+        <div class="news-time">🕐 8시간 전</div>
+      </div>
+      <div class="news-card">
+        <div class="news-meta"><span class="news-badge badge-sports">스포츠</span><span class="news-src">ESPN</span></div>
+        <div class="news-title">Masters 2026: Rory McIlroy Leads After Stunning Round of 63 at Augusta</div>
+        <div class="news-desc">The Northern Irishman set a new course record with an extraordinary display of precision iron play, putting him five shots clear of the field heading into the weekend.</div>
+        <div class="news-time">🕐 9시간 전</div>
+      </div>
+      <div class="news-card">
+        <div class="news-meta"><span class="news-badge badge-world">세계</span><span class="news-src">Al Jazeera</span></div>
+        <div class="news-title">UN Security Council Calls Emergency Session Over Sudan Conflict</div>
+        <div class="news-desc">Member states urged immediate ceasefire as humanitarian crisis deepens with over 2 million displaced in the latest wave of fighting between rival factions.</div>
+        <div class="news-time">🕐 10시간 전</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════ 분석 탭 ══════════════ -->
+  <div id="page-analytics" style="display:none">
+
+    <!-- 카테고리 필터 -->
+    <div class="cats">
+      <div class="cat active">🌐 전체</div>
+      <div class="cat">🗺️ 세계</div>
+      <div class="cat">💻 기술</div>
+      <div class="cat">📈 비즈니스</div>
+      <div class="cat">🔬 과학</div>
+      <div class="cat">🏥 건강</div>
+      <div class="cat">⚽ 스포츠</div>
+    </div>
+
+    <!-- 요약 카드 -->
+    <div class="stat-grid">
+      <div class="stat-card">
+        <div class="stat-label">추출된 키워드</div>
+        <div class="stat-value">1,847</div>
+        <div class="stat-sub">지난 30일</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">유의미한 키워드</div>
+        <div class="stat-value">312</div>
+        <div class="stat-sub">3회 이상 언급</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">최다 언급 키워드</div>
+        <div class="stat-value">iran</div>
+        <div class="stat-sub">43회</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">TOP 10 점유율</div>
+        <div class="stat-value">34%</div>
+        <div class="stat-sub">전체 언급 대비</div>
+      </div>
+    </div>
+
+    <!-- 워드 클라우드 히트맵 -->
+    <div class="card">
+      <div class="card-title">키워드 히트맵 (지난 30일)</div>
+      <div class="wordcloud" id="wordcloud"></div>
+    </div>
+
+    <!-- TOP 10 + 트렌드 -->
+    <div class="two-col">
+      <div class="card">
+        <div class="card-title">TOP 10 키워드</div>
+        <div class="period-tabs">
+          <button class="period-tab active" onclick="switchPeriod('daily',this)">오늘</button>
+          <button class="period-tab" onclick="switchPeriod('weekly',this)">이번 주</button>
+          <button class="period-tab" onclick="switchPeriod('monthly',this)">이번 달</button>
+        </div>
+        <canvas id="barChart" height="260"></canvas>
+      </div>
+      <div class="card">
+        <div class="card-title">키워드 트렌드 (지난 30일)</div>
+        <canvas id="lineChart" height="260"></canvas>
+      </div>
+    </div>
+
+    <!-- 히트맵 그리드 -->
+    <div class="card">
+      <div class="card-title">키워드 × 날짜 히트맵</div>
+      <div class="period-tabs">
+        <button class="period-tab active">최근 7일</button>
+        <button class="period-tab">최근 14일</button>
+        <button class="period-tab">최근 30일</button>
+      </div>
+      <div class="heatmap-wrap">
+        <table class="heatmap-table" id="heatmap"></table>
+      </div>
+      <div class="legend">
+        <span>적음</span>
+        <div class="legend-cell c0"></div>
+        <div class="legend-cell c1"></div>
+        <div class="legend-cell c2"></div>
+        <div class="legend-cell c3"></div>
+        <div class="legend-cell c4"></div>
+        <span>많음</span>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<footer>매일 오전 8시 · 오후 1시 자동 업데이트 | 글로벌 뉴스 대시보드</footer>
+
+<script>
+/* ── 탭 전환 ── */
+function showTab(t){
+  document.getElementById('page-news').style.display      = t==='news'      ? '' : 'none';
+  document.getElementById('page-analytics').style.display = t==='analytics' ? '' : 'none';
+  document.getElementById('tab-news').classList.toggle('active',      t==='news');
+  document.getElementById('tab-analytics').classList.toggle('active', t==='analytics');
+}
+
+/* ── 워드 클라우드 ── */
+const WC_DATA = [
+  {w:'iran',n:43},{w:'artemis',n:35},{w:'nasa',n:25},{w:'trump',n:20},
+  {w:'scientists',n:20},{w:'moon',n:20},{w:'disease',n:18},{w:'war',n:17},
+  {w:'earth',n:17},{w:'cancer',n:17},{w:'mission',n:16},{w:'research',n:15},
+  {w:'israel',n:14},{w:'climate',n:13},{w:'china',n:13},{w:'nuclear',n:12},
+  {w:'space',n:12},{w:'health',n:11},{w:'attack',n:11},{w:'energy',n:10},
+  {w:'police',n:10},{w:'court',n:9},{w:'ukraine',n:9},{w:'bitcoin',n:9},
+  {w:'samsung',n:8},{w:'apple',n:8},{w:'study',n:8},{w:'security',n:7},
+  {w:'election',w2:'election',n:7},{w:'russia',n:7},{w:'virus',n:6},
+  {w:'market',n:6},{w:'congress',n:6},{w:'inflation',n:5},{w:'ocean',n:5},
+  {w:'galaxy',n:5},{w:'hospital',n:4},{w:'protest',n:4},{w:'economy',n:4},
+];
+const WC_COLORS = ['#93c5fd','#60a5fa','#3b82f6','#2563eb','#1d4ed8','#4f46e5','#7c3aed'];
+const maxN = WC_DATA[0].n, minN = WC_DATA[WC_DATA.length-1].n, rng = maxN-minN||1;
+const wc = document.getElementById('wordcloud');
+WC_DATA.forEach(({w,n})=>{
+  const ratio = (n-minN)/rng;
+  const fs = Math.round(12+ratio*38);
+  const ci = Math.floor(ratio*(WC_COLORS.length-1));
+  const el = document.createElement('span');
+  el.textContent = w;
+  el.title = `${w}: ${n}회`;
+  el.style.cssText = `font-size:${fs}px;color:${WC_COLORS[ci]};cursor:default;transition:transform .15s`;
+  el.onmouseenter=()=>el.style.transform='scale(1.12)';
+  el.onmouseleave=()=>el.style.transform='';
+  wc.appendChild(el);
+});
+
+/* ── TOP 10 바 차트 ── */
+const TOP_DATA = {
+  daily:   [{k:'iran',v:28},{k:'artemis',v:18},{k:'war',v:17},{k:'disease',v:17},{k:'nasa',v:15},{k:'moon',v:13},{k:'talks',v:12},{k:'mission',v:12},{k:'cancer',v:11},{k:'earth',v:10}],
+  weekly:  [{k:'iran',v:43},{k:'artemis',v:35},{k:'nasa',v:25},{k:'trump',v:20},{k:'scientists',v:20},{k:'moon',v:20},{k:'disease',v:18},{k:'war',v:17},{k:'earth',v:17},{k:'cancer',v:17}],
+  monthly: [{k:'iran',v:89},{k:'trump',v:75},{k:'china',v:68},{k:'climate',v:62},{k:'nasa',v:58},{k:'ukraine',v:54},{k:'artemis',v:51},{k:'cancer',v:47},{k:'israel',v:44},{k:'market',v:40}],
+};
+let barChart;
+function buildBar(period){
+  const d = TOP_DATA[period];
+  if(barChart) barChart.destroy();
+  barChart = new Chart(document.getElementById('barChart'),{
+    type:'bar',
+    data:{
+      labels: d.map(x=>x.k),
+      datasets:[{
+        data: d.map(x=>x.v),
+        backgroundColor: d.map((_,i)=>`hsl(${220+i*8},80%,${60-i*3}%)`),
+        borderRadius:4,
+      }]
+    },
+    options:{
+      indexAxis:'y',
+      responsive:true,
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>`${c.raw}회`}}},
+      scales:{
+        x:{grid:{color:'#f3f4f6'},ticks:{font:{size:11}}},
+        y:{grid:{display:false},ticks:{font:{size:12,weight:500}}}
+      }
+    }
+  });
+}
+buildBar('daily');
+function switchPeriod(p,btn){
+  document.querySelectorAll('.period-tab').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  buildBar(p);
+}
+
+/* ── 트렌드 라인 차트 ── */
+const DATES = ['3/13','3/16','3/19','3/22','3/25','3/28','3/31','4/3','4/6','4/9','4/12'];
+const TREND_DATA = {
+  iran:      [2,3,5,8,12,15,18,22,28,35,43],
+  artemis:   [1,2,3,5,8,12,18,22,28,32,35],
+  trump:     [8,10,12,11,13,15,14,16,18,19,20],
+  climate:   [3,4,5,4,6,7,8,9,10,11,13],
+  nasa:      [2,3,4,6,8,10,12,15,18,22,25],
+  ukraine:   [5,6,7,6,7,8,7,8,9,9,9],
+};
+new Chart(document.getElementById('lineChart'),{
+  type:'line',
+  data:{
+    labels: DATES,
+    datasets: Object.entries(TREND_DATA).map(([label,data],i)=>({
+      label, data,
+      borderColor: ['#2563eb','#dc2626','#16a34a','#d97706','#7c3aed','#0891b2'][i],
+      backgroundColor:'transparent',
+      borderWidth:2,
+      pointRadius:0,
+      tension:.4,
+    }))
+  },
+  options:{
+    responsive:true,
+    plugins:{
+      legend:{position:'bottom',labels:{font:{size:11},boxWidth:12,usePointStyle:true}},
+      tooltip:{mode:'index',intersect:false}
+    },
+    scales:{
+      x:{grid:{color:'#f3f4f6'},ticks:{font:{size:11}}},
+      y:{grid:{color:'#f3f4f6'},ticks:{font:{size:11}}}
+    }
+  }
+});
+
+/* ── 히트맵 그리드 ── */
+const HM_KEYWORDS = ['iran','artemis','nasa','trump','scientists','moon','disease','war','earth','cancer','mission','research','israel','climate','china'];
+const HM_DATES = ['4/6','4/7','4/8','4/9','4/10','4/11','4/12'];
+function randCell(base){ return Math.max(0, base + Math.floor((Math.random()-.4)*base*1.5)); }
+function cellClass(v,max){
+  if(!v) return 'c0';
+  const r = v/max;
+  if(r<.2) return 'c1';
+  if(r<.4) return 'c2';
+  if(r<.7) return 'c3';
+  return 'c4';
+}
+const tbl = document.getElementById('heatmap');
+const hdr = tbl.createTHead().insertRow();
+hdr.insertCell().innerHTML='<th>키워드</th>';
+HM_DATES.forEach(d=>{ const th=document.createElement('th'); th.textContent=d; hdr.appendChild(th); });
+const tbody = tbl.createTBody();
+HM_KEYWORDS.forEach((kw,ki)=>{
+  const base = [43,35,25,20,20,20,18,17,17,17,16,15,14,13,13][ki];
+  const row = tbody.insertRow();
+  const td0 = row.insertCell(); td0.className='kw'; td0.textContent=kw;
+  const values = HM_DATES.map(()=>randCell(base/7));
+  const maxV = Math.max(...values);
+  values.forEach(v=>{
+    const td = row.insertCell();
+    td.title=`${kw}: ${v}회`;
+    td.innerHTML=`<div class="cell ${cellClass(v,maxV)}"></div>`;
+  });
+});
+</script>
+</body>
+</html>

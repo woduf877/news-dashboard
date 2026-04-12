@@ -13,9 +13,11 @@ const {
   getAllArticlesForKeywords,
   keywordStatsEmpty,
   upsertKeywords,
+  getMarketWindowArticles,
+  getMarketHourlyCount,
 } = require('./db');
-const { extractFromArticles } = require('./keywords');
-const { runCrawl, NEWS_SOURCES } = require('./crawler');
+const { extractFromArticles, computeMarketKeywords, getMarketWindow } = require('./keywords');
+const { runCrawl, NEWS_SOURCES, KOREA_MARKET_SOURCES } = require('./crawler');
 const { startScheduler } = require('./scheduler');
 
 const app = express();
@@ -66,7 +68,7 @@ app.get('/api/status', (req, res) => {
     data: {
       lastCrawlAt: last?.finished_at || null,
       nextCrawlAt: nextTimes,
-      sources: NEWS_SOURCES.length,
+      sources: NEWS_SOURCES.length + KOREA_MARKET_SOURCES.length,
     },
   });
 });
@@ -107,7 +109,46 @@ app.get('/api/analytics/trends', (req, res) => {
   res.json({ ok: true, data });
 });
 
-// React 라우팅 폴백 (SPA)
+// ─── 한국 증시 키워드 API ─────────────────────────────
+
+app.get('/api/market/keywords', (req, res) => {
+  const { topN = 50, lang } = req.query;
+  const window = getMarketWindow();
+  const articles = getMarketWindowArticles(window.from, window.to);
+
+  let keywords = computeMarketKeywords(articles, Number(topN));
+  if (lang === 'ko') keywords = keywords.filter(k => k.lang === 'ko');
+  if (lang === 'en') keywords = keywords.filter(k => k.lang === 'en');
+
+  res.json({
+    ok: true,
+    data: {
+      keywords,
+      window,
+      articleCount: articles.length,
+      categoryBreakdown: summarizeByCategory(articles),
+    },
+  });
+});
+
+// 시간별 기사 수 히스토그램
+app.get('/api/market/hourly', (req, res) => {
+  const window = getMarketWindow();
+  const rows = getMarketHourlyCount(window.from, window.to);
+  res.json({ ok: true, data: rows, window });
+});
+
+function summarizeByCategory(articles) {
+  const counts = {};
+  for (const a of articles) {
+    counts[a.category] = (counts[a.category] || 0) + 1;
+  }
+  return Object.entries(counts)
+    .sort((a, b) => b[1] - a[1])
+    .map(([category, count]) => ({ category, count }));
+}
+
+// React 라우팅 폴백 (SPA) — API 라우트 이후에 위치해야 함
 app.get('*', (req, res) => {
   const index = path.join(STATIC_DIR, 'index.html');
   res.sendFile(index, (err) => {

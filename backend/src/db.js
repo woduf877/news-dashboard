@@ -284,6 +284,30 @@ function keywordStatsEmpty() {
   return db.prepare(`SELECT COUNT(*) as cnt FROM keyword_stats`).get().cnt === 0;
 }
 
+// 증시 시간창 기사 조회
+function getMarketWindowArticles(fromISO, toISO) {
+  return db.prepare(`
+    SELECT title, description, category, pub_date, source_name
+    FROM articles
+    WHERE pub_date >= ? AND pub_date <= ?
+    ORDER BY pub_date DESC
+  `).all(fromISO, toISO);
+}
+
+// 증시 시간창 시간별 기사 수 (히스토그램용)
+function getMarketHourlyCount(fromISO, toISO) {
+  return db.prepare(`
+    SELECT
+      strftime('%Y-%m-%dT%H:00:00', pub_date) AS hour,
+      COUNT(*) AS count,
+      category
+    FROM articles
+    WHERE pub_date >= ? AND pub_date <= ?
+    GROUP BY hour, category
+    ORDER BY hour ASC
+  `).all(fromISO, toISO);
+}
+
 module.exports = {
   startCrawl,
   finishCrawl,
@@ -300,4 +324,6 @@ module.exports = {
   getTrendData,
   getAllArticlesForKeywords,
   keywordStatsEmpty,
+  getMarketWindowArticles,
+  getMarketHourlyCount,
 };

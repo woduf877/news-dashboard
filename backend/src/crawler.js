@@ -12,6 +12,23 @@ const parser = new Parser({
   },
 });
 
+// 한국 증시 관련 뉴스 소스 (한국어 + 영어)
+const KOREA_MARKET_SOURCES = [
+  // 한국 경제·증시 (한국어)
+  { name: '연합뉴스 경제',   url: 'https://www.yna.co.kr/economy/rss.xml',                           category: 'korea_market', lang: 'ko' },
+  { name: '한국경제',        url: 'https://www.hankyung.com/feed/economy',                           category: 'korea_market', lang: 'ko' },
+  { name: '매일경제',        url: 'https://www.mk.co.kr/rss/40300001/',                              category: 'korea_market', lang: 'ko' },
+  { name: '조선비즈',        url: 'https://biz.chosun.com/site/data/rss/rss.xml',                   category: 'korea_market', lang: 'ko' },
+  { name: '머니투데이',      url: 'https://news.mt.co.kr/mtview/mt_m_rss.php',                      category: 'korea_market', lang: 'ko' },
+  { name: '이데일리',        url: 'https://www.edaily.co.kr/rss/feed.xml',                          category: 'korea_market', lang: 'ko' },
+  // 영문 한국 경제
+  { name: 'Korea Herald 경제', url: 'https://www.koreaherald.com/rss/business.xml',                 category: 'korea_market', lang: 'en' },
+  { name: 'Korea Times 비즈',  url: 'https://www.koreatimes.co.kr/www/rss/rss_biz.xml',             category: 'korea_market', lang: 'en' },
+  // 글로벌 금융 (한국 증시 영향)
+  { name: 'CNBC Finance',    url: 'https://www.cnbc.com/id/10000664/device/rss/rss.html',           category: 'korea_market', lang: 'en' },
+  { name: 'MarketWatch',     url: 'https://feeds.marketwatch.com/marketwatch/topstories/',          category: 'korea_market', lang: 'en' },
+];
+
 // 뉴스 소스 목록 (카테고리별 RSS 피드)
 const NEWS_SOURCES = [
   // 세계
@@ -63,6 +80,7 @@ async function fetchSource(source) {
       pub_date:    item.isoDate || item.pubDate || new Date().toISOString(),
       source_name: source.name,
       category:    source.category,
+      lang:        source.lang || 'en',
     })).filter(a => a.title);
 
   } catch (err) {
@@ -76,15 +94,15 @@ function stripHtml(str) {
   return str.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim().slice(0, 500);
 }
 
-// 전체 크롤 실행
+// 전체 크롤 실행 (일반 뉴스 + 한국 증시 소스 통합)
 async function runCrawl() {
   console.log(`[crawler] 크롤 시작 — ${new Date().toLocaleString('ko-KR')}`);
   const crawlId = startCrawl();
 
-  // 모든 소스를 병렬 요청 (최대 5개씩 배치)
+  const allSources = [...NEWS_SOURCES, ...KOREA_MARKET_SOURCES];
   const results = [];
-  for (let i = 0; i < NEWS_SOURCES.length; i += 5) {
-    const batch = NEWS_SOURCES.slice(i, i + 5);
+  for (let i = 0; i < allSources.length; i += 5) {
+    const batch = allSources.slice(i, i + 5);
     const batchResults = await Promise.all(batch.map(fetchSource));
     results.push(...batchResults.flat());
   }
@@ -108,4 +126,4 @@ async function runCrawl() {
   return { crawlId, saved, total: results.length };
 }
 
-module.exports = { runCrawl, NEWS_SOURCES };
+module.exports = { runCrawl, NEWS_SOURCES, KOREA_MARKET_SOURCES };

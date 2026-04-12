@@ -3,6 +3,7 @@ import Header from './components/Header';
 import CategoryFilter from './components/CategoryFilter';
 import NewsGrid from './components/NewsGrid';
 import Analytics from './pages/Analytics';
+import Market from './pages/Market';
 
 const CATEGORY_LABELS = {
   all:        '전체',
@@ -17,6 +18,7 @@ const CATEGORY_LABELS = {
 const NAV_TABS = [
   { key: 'news',      label: '📰 뉴스' },
   { key: 'analytics', label: '📊 키워드 분석' },
+  { key: 'market',    label: '📈 증시 키워드' },
 ];
 
 export default function App() {
@@ -128,8 +130,10 @@ export default function App() {
             />
             <NewsGrid articles={articles} loading={loading} />
           </div>
-        ) : (
+        ) : tab === 'analytics' ? (
           <Analytics />
+        ) : (
+          <Market />
         )}
       </main>
 

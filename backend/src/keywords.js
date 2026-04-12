@@ -95,4 +95,123 @@ function extractFromArticles(articles) {
   return result;
 }
 
-module.exports = { tokenize, extractFromArticles };
+// ─── 한국어 키워드 추출 ──────────────────────────────
+
+// 한국어 불용어 (조사·어미·기능어·뉴스 형식어)
+const KO_STOP_WORDS = new Set([
+  // 조사
+  '이','가','은','는','을','를','의','에','에서','로','으로','와','과',
+  '도','만','뿐','까지','부터','에게','한테','께','이나','나','이며','며',
+  // 어미·서술어
+  '이다','있다','없다','하다','되다','했다','한다','됩니다','했습니다',
+  '합니다','됩니다','있습니다','없습니다','이다','라고','이라고',
+  '하며','되며','하고','되고','했으며','됐으며','라며','이라며',
+  // 지시·접속
+  '이','그','저','이것','그것','저것','이런','그런','저런','모든','각',
+  '및','등','또','또한','그리고','하지만','그러나','그래서','따라서',
+  '그런데','한편','반면','아울러','다만','단','물론',
+  // 시간·정도
+  '지난','이번','올해','내년','최근','현재','당시','오는','이후','이전',
+  '지난해','올해','매년','매월','매주','오늘','내일','어제',
+  '이날','같은날','전날','다음날',
+  // 뉴스 형식어
+  '발표','공개','예정','확인','관련','내용','통해','위해','따라','대해',
+  '대한','관한','위한','통한','따른','의한','보다','비해','위에','아래',
+  '가운데','사이','속에','중에','전에','후에','때문','탓에','덕분',
+  // 수량·비율
+  '약','총','전체','일부','대부분','여러','다양한','다른','같은',
+  '더욱','매우','특히','아직','이미','항상','가장','더','이상','이하',
+  // 자주 나오지만 의미 낮은 단어
+  '문제','상황','경우','방법','결과','기준','수준','방향','과정','내용',
+  '부분','측면','분야','차원','기간','규모','정도','이유','원인',
+]);
+
+// 한국어 텍스트 여부 판별
+function isKorean(text) {
+  return /[\uAC00-\uD7A3]/.test(text);
+}
+
+// 한국어 토크나이저 (공백 분리 + 불용어 필터)
+function tokenizeKorean(text) {
+  return (text || '')
+    .replace(/[^\uAC00-\uD7A3\s]/g, ' ')   // 한글·공백만 남김
+    .split(/\s+/)
+    .filter(w =>
+      w.length >= 2 &&                       // 2글자 이상
+      !KO_STOP_WORDS.has(w) &&
+      !/^\d+$/.test(w)
+    );
+}
+
+/**
+ * 한국 증시 시간창 내 기사에서 키워드 집계 (온디맨드)
+ * articles: DB에서 조회한 기사 배열
+ * returns: [{ keyword, count, lang }] 정렬된 배열
+ */
+function computeMarketKeywords(articles, topN = 50) {
+  const freq = {};
+
+  for (const article of articles) {
+    const text = `${article.title} ${article.description || ''}`;
+    const words = isKorean(text) ? tokenizeKorean(text) : tokenize(text);
+
+    for (const word of words) {
+      freq[word] = (freq[word] || 0) + 1;
+    }
+  }
+
+  return Object.entries(freq)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, topN)
+    .map(([keyword, count]) => ({
+      keyword,
+      count,
+      lang: isKorean(keyword) ? 'ko' : 'en',
+    }));
+}
+
+/**
+ * 한국 증시 마감 이후 시간창 계산 (KST 기준)
+ * 마감: 평일 15:30 KST
+ * 주말이면 직전 금요일 15:30으로 소급
+ */
+function getMarketWindow() {
+  const now = new Date();
+  const kst = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
+
+  // 전날(또는 직전 영업일) 15:30 KST 계산
+  const close = new Date(kst);
+  close.setDate(close.getDate() - 1);
+  close.setHours(15, 30, 0, 0);
+
+  // 직전 영업일로 소급 (주말 건너뜀)
+  const dow = close.getDay(); // 0=일, 6=토
+  if (dow === 0) close.setDate(close.getDate() - 2); // 일→금
+  if (dow === 6) close.setDate(close.getDate() - 1); // 토→금
+
+  // UTC 변환 (KST = UTC+9)
+  const fromUTC = new Date(close.getTime() - 9 * 60 * 60 * 1000);
+  const toUTC   = now;
+
+  const fmt = (d) =>
+    d.toLocaleString('ko-KR', {
+      timeZone: 'Asia/Seoul',
+      month: 'numeric', day: 'numeric',
+      hour: '2-digit', minute: '2-digit',
+    });
+
+  return {
+    from:      fromUTC.toISOString(),
+    to:        toUTC.toISOString(),
+    fromLabel: fmt(fromUTC) + ' (장 마감)',
+    toLabel:   fmt(toUTC),
+  };
+}
+
+module.exports = {
+  tokenize,
+  tokenizeKorean,
+  extractFromArticles,
+  computeMarketKeywords,
+  getMarketWindow,
+};
