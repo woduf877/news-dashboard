@@ -353,7 +353,7 @@ function getLatestAnalysis() {
 
 function getAnalysisStatus() {
   return db.prepare(`
-    SELECT id, status, error, analyzed_at, model, article_count
+    SELECT id, status, error, analyzed_at, article_count
     FROM market_analysis ORDER BY id DESC LIMIT 1
   `).get();
 }
