@@ -12,6 +12,18 @@ const parser = new Parser({
   },
 });
 
+// 미국 증시 관련 뉴스 소스
+const US_MARKET_SOURCES = [
+  { name: 'WSJ Markets',      url: 'https://feeds.a.wsj.com/rss/RSSMarketsMain.xml',              category: 'us_market', lang: 'en' },
+  { name: 'CNBC US Markets',  url: 'https://www.cnbc.com/id/15839069/device/rss/rss.html',        category: 'us_market', lang: 'en' },
+  { name: 'Reuters Business', url: 'https://feeds.reuters.com/reuters/businessNews',              category: 'us_market', lang: 'en' },
+  { name: 'Financial Times',  url: 'https://www.ft.com/rss/home/us',                              category: 'us_market', lang: 'en' },
+  { name: 'Seeking Alpha',    url: 'https://seekingalpha.com/market_currents.xml',                category: 'us_market', lang: 'en' },
+  { name: 'Benzinga',         url: 'https://www.benzinga.com/feed',                               category: 'us_market', lang: 'en' },
+  { name: "Barron's",         url: 'https://www.barrons.com/feed/rss/rss.xml',                    category: 'us_market', lang: 'en' },
+  { name: 'Motley Fool',      url: 'https://www.fool.com/feeds/syndication/rss/headlines.aspx',   category: 'us_market', lang: 'en' },
+];
+
 // 한국 증시 관련 뉴스 소스 (한국어 + 영어)
 const KOREA_MARKET_SOURCES = [
   // 한국 경제·증시 (한국어)
@@ -99,7 +111,7 @@ async function runCrawl() {
   console.log(`[crawler] 크롤 시작 — ${new Date().toLocaleString('ko-KR')}`);
   const crawlId = startCrawl();
 
-  const allSources = [...NEWS_SOURCES, ...KOREA_MARKET_SOURCES];
+  const allSources = [...NEWS_SOURCES, ...KOREA_MARKET_SOURCES, ...US_MARKET_SOURCES];
   const results = [];
   for (let i = 0; i < allSources.length; i += 5) {
     const batch = allSources.slice(i, i + 5);
@@ -126,4 +138,4 @@ async function runCrawl() {
   return { crawlId, saved, total: results.length };
 }
 
-module.exports = { runCrawl, NEWS_SOURCES, KOREA_MARKET_SOURCES };
+module.exports = { runCrawl, NEWS_SOURCES, KOREA_MARKET_SOURCES, US_MARKET_SOURCES };
