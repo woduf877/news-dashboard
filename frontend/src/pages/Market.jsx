@@ -390,7 +390,7 @@ export default function Market() {
               {/* ── 듀얼 패널 ── */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <AgentPanel
-                  label="Gemini 2.0 Flash — 1차 분석가"
+                  label="Gemini Flash — 1차 분석가"
                   model="Google Gemini"
                   color="bg-blue-600"
                   result={analysis.gemini}
