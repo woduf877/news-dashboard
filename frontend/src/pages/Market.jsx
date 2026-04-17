@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
@@ -183,6 +183,144 @@ function AgentPanel({ label, model, color, result, agreedTickers = [], disagreed
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// 종합 결과 패널
+const CONSISTENCY_CFG = {
+  high:   { label: '높음', color: 'text-green-600 dark:text-green-400',  bg: 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-700',  icon: '🎯' },
+  medium: { label: '보통', color: 'text-yellow-600 dark:text-yellow-400', bg: 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-700', icon: '🔶' },
+  low:    { label: '낮음', color: 'text-red-600 dark:text-red-400',       bg: 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-700',           icon: '⚡' },
+};
+
+function SummaryPanel({ summary }) {
+  if (!summary) return null;
+  const sentCfg  = SENTIMENT_CFG[summary.sentiment] || SENTIMENT_CFG.neutral;
+  const consCfg  = CONSISTENCY_CFG[summary.consistency] || CONSISTENCY_CFG.medium;
+
+  return (
+    <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 overflow-hidden">
+      <div className="px-5 py-3 bg-gray-800 dark:bg-gray-700 flex items-center justify-between">
+        <div>
+          <p className="text-xs font-bold text-white">📊 {summary.runCount}회 종합 결과</p>
+          <p className="text-xs text-gray-400">Gemini + Groq 각 {summary.runCount}회 실행 후 집계</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-semibold text-white">{sentCfg.icon} {sentCfg.label}</span>
+          <span className={`px-2.5 py-1 rounded-lg border text-xs font-semibold ${consCfg.bg} ${consCfg.color}`}>
+            {consCfg.icon} 일치도 {consCfg.label}
+          </span>
+        </div>
+      </div>
+
+      <div className="p-5 space-y-4">
+        {/* 테마 */}
+        {summary.themes?.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {summary.themes.map(t => (
+              <span key={t} className="px-2.5 py-1 bg-gray-100 dark:bg-gray-800 rounded-full text-xs text-gray-600 dark:text-gray-300 font-medium">#{t}</span>
+            ))}
+          </div>
+        )}
+
+        {/* 섹터 */}
+        {summary.sectors?.length > 0 && (
+          <div className="space-y-1.5">
+            <p className="text-xs font-semibold text-gray-500 dark:text-gray-400">반복 등장 섹터</p>
+            <div className="flex flex-wrap gap-2">
+              {summary.sectors.map(s => {
+                const ic = IMPACT_CFG[s.impact] || IMPACT_CFG.neutral;
+                return (
+                  <span key={s.name} className={`px-2 py-0.5 rounded text-xs font-medium ${ic.badge}`}>
+                    {s.name} {ic.label}
+                  </span>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* 종목 */}
+        {summary.stocks?.length > 0 && (
+          <div className="space-y-2">
+            <p className="text-xs font-semibold text-gray-500 dark:text-gray-400">
+              2회 이상 등장 종목 ({summary.stocks.length}개)
+            </p>
+            {summary.stocks.map(stock => {
+              const ic  = IMPACT_CFG[stock.impact] || IMPACT_CFG.neutral;
+              const pct = Math.round((stock.score || 0) * 100);
+              return (
+                <div key={stock.ticker} className="p-3 rounded-xl border border-gray-100 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/30">
+                  <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                    <span className="font-bold text-sm text-gray-900 dark:text-white">{stock.name}</span>
+                    <span className="font-mono text-xs text-gray-400">{stock.ticker}</span>
+                    <span className="text-xs text-gray-400">{stock.market}</span>
+                    <span className={`ml-auto text-[11px] px-2 py-0.5 rounded-full font-semibold ${ic.badge}`}>{ic.label}</span>
+                    <span className="text-[10px] text-blue-500 font-medium">{stock.appearCount}/{summary.runCount}회 등장</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
+                      <div className={`h-1.5 rounded-full ${ic.bar}`} style={{ width: `${pct}%` }} />
+                    </div>
+                    <span className="text-xs text-gray-500 w-8 text-right">{pct}%</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {!summary.stocks?.length && !summary.sectors?.length && (
+          <p className="text-xs text-gray-400 dark:text-gray-600 text-center py-4">2회 이상 공통 등장 종목이 없습니다</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// 3회 상세 결과 (접기/펼치기)
+function RunsDetail({ runs }) {
+  const [open, setOpen] = useState(false);
+  if (!runs?.length) return null;
+
+  return (
+    <div className="border border-gray-100 dark:border-gray-800 rounded-2xl overflow-hidden">
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="w-full flex items-center justify-between px-5 py-3 bg-gray-50 dark:bg-gray-800/50 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-left"
+      >
+        <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+          🔍 {runs.length}회 상세 결과 보기
+        </span>
+        <span className="text-gray-400 text-lg">{open ? '▲' : '▼'}</span>
+      </button>
+
+      {open && (
+        <div className="p-4 space-y-6 bg-white dark:bg-gray-900">
+          {runs.map((run, i) => (
+            <div key={i}>
+              <p className="text-xs font-bold text-gray-400 dark:text-gray-600 mb-3 uppercase tracking-wider">
+                — {i + 1}회차 —
+              </p>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <AgentPanel
+                  label={`Gemini Flash — ${i + 1}회차`}
+                  model="Google Gemini"
+                  color="bg-blue-600"
+                  result={run.geminiResult}
+                />
+                <AgentPanel
+                  label={`Groq Llama 3.3 70B — ${i + 1}회차`}
+                  model="Groq"
+                  color="bg-orange-500"
+                  result={run.groqResult}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -387,25 +525,36 @@ export default function Market() {
                 )}
               </div>
 
-              {/* ── 듀얼 패널 ── */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <AgentPanel
-                  label="Gemini Flash — 1차 분석가"
-                  model="Google Gemini"
-                  color="bg-blue-600"
-                  result={analysis.gemini}
-                  agreedTickers={agreedTickers}
-                  disagreedTickers={disagreedTickers}
-                />
-                <AgentPanel
-                  label="Groq Llama 3.3 70B — 감독·리뷰어"
-                  model="Groq"
-                  color="bg-orange-500"
-                  result={analysis.groq}
-                  agreedTickers={agreedTickers}
-                  disagreedTickers={disagreedTickers}
-                />
-              </div>
+              {/* ── 종합 결과 ── */}
+              {analysis.summary && <SummaryPanel summary={analysis.summary} />}
+
+              {/* ── 3회 상세 결과 (접기/펼치기) ── */}
+              {analysis.runs && <RunsDetail runs={analysis.runs} />}
+
+              {/* ── 대표 듀얼 패널 (마지막 성공 회차) ── */}
+              {(analysis.gemini || analysis.groq) && (
+                <div>
+                  <p className="text-xs text-gray-400 dark:text-gray-600 mb-3">대표 회차 결과 (Gemini + Groq)</p>
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <AgentPanel
+                      label="Gemini Flash — 1차 분석가"
+                      model="Google Gemini"
+                      color="bg-blue-600"
+                      result={analysis.gemini}
+                      agreedTickers={agreedTickers}
+                      disagreedTickers={disagreedTickers}
+                    />
+                    <AgentPanel
+                      label="Groq Llama 3.3 70B — 감독·리뷰어"
+                      model="Groq"
+                      color="bg-orange-500"
+                      result={analysis.groq}
+                      agreedTickers={agreedTickers}
+                      disagreedTickers={disagreedTickers}
+                    />
+                  </div>
+                </div>
+              )}
             </>
           )}
         </>

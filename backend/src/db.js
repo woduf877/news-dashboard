@@ -59,9 +59,16 @@ db.exec(`
     gemini_json   TEXT,
     groq_json     TEXT,
     agreement     TEXT,
-    agreement_score REAL
+    agreement_score REAL,
+    runs_json     TEXT,
+    summary_json  TEXT
   );
 `);
+
+// 기존 DB에 컬럼이 없을 경우 마이그레이션
+for (const col of ['runs_json', 'summary_json']) {
+  try { db.exec(`ALTER TABLE market_analysis ADD COLUMN ${col} TEXT`); } catch {}
+}
 
 // 크롤 시작 기록
 function startCrawl() {
@@ -308,19 +315,30 @@ function createAnalysis(windowFrom, windowTo, articleCount) {
   return info.lastInsertRowid;
 }
 
-function saveAnalysisResult(id, { geminiResult, groqResult }) {
-  const agreement      = groqResult?.agreement || null;
-  const agreementScore = groqResult?.agreementScore ?? null;
+function saveAnalysisResult(id, { geminiResult, groqResult, runs, summary }) {
+  // agreement: 종합 일치도를 기존 필드에 매핑
+  const consistencyMap = { high: 'agree', medium: 'partial', low: 'disagree' };
+  const scoreMap       = { high: 1.0, medium: 0.67, low: 0.33 };
+  const agreement      = summary?.consistency
+    ? consistencyMap[summary.consistency]
+    : (groqResult?.agreement || null);
+  const agreementScore = summary?.consistency
+    ? scoreMap[summary.consistency]
+    : (groqResult?.agreementScore ?? null);
+
   db.prepare(`
     UPDATE market_analysis SET
       status = 'success',
       gemini_json = ?, groq_json = ?,
-      agreement = ?, agreement_score = ?
+      agreement = ?, agreement_score = ?,
+      runs_json = ?, summary_json = ?
     WHERE id = ?
   `).run(
     geminiResult ? JSON.stringify(geminiResult) : null,
     groqResult   ? JSON.stringify(groqResult)   : null,
     agreement, agreementScore,
+    runs    ? JSON.stringify(runs)    : null,
+    summary ? JSON.stringify(summary) : null,
     id
   );
 }
@@ -339,15 +357,17 @@ function getLatestAnalysis() {
   `).get();
   if (!row) return null;
   return {
-    id:             row.id,
-    analyzed_at:    row.analyzed_at,
-    window_from:    row.window_from,
-    window_to:      row.window_to,
-    article_count:  row.article_count,
-    agreement:      row.agreement,
+    id:              row.id,
+    analyzed_at:     row.analyzed_at,
+    window_from:     row.window_from,
+    window_to:       row.window_to,
+    article_count:   row.article_count,
+    agreement:       row.agreement,
     agreement_score: row.agreement_score,
-    gemini: row.gemini_json ? JSON.parse(row.gemini_json) : null,
-    groq:   row.groq_json   ? JSON.parse(row.groq_json)   : null,
+    gemini:   row.gemini_json   ? JSON.parse(row.gemini_json)   : null,
+    groq:     row.groq_json     ? JSON.parse(row.groq_json)     : null,
+    runs:     row.runs_json     ? JSON.parse(row.runs_json)     : null,
+    summary:  row.summary_json  ? JSON.parse(row.summary_json)  : null,
   };
 }
 

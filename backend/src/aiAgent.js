@@ -166,7 +166,7 @@ ${JSON.stringify(geminiResult, null, 2)}
   return safeJson(completion.choices[0].message.content);
 }
 
-// ─── 메인: 듀얼 에이전트 실행 ───────────────────────────
+// ─── 메인: 듀얼 에이전트 실행 (1회) ────────────────────
 
 async function analyzeDual(articles) {
   const errors = {};
@@ -202,8 +202,106 @@ async function analyzeDual(articles) {
   return { geminiResult, groqResult, errors };
 }
 
+// ─── 3회 반복 실행 ──────────────────────────────────────
+
+async function runMultiple(articles, count = 3) {
+  const runs = [];
+  for (let i = 0; i < count; i++) {
+    console.log(`[aiAgent] 멀티 분석 ${i + 1}/${count}회`);
+    try {
+      const result = await analyzeDual(articles);
+      runs.push(result);
+    } catch (e) {
+      console.error(`[aiAgent] ${i + 1}회 전체 실패:`, e.message);
+      runs.push({ geminiResult: null, groqResult: null, errors: { fatal: e.message } });
+    }
+    if (i < count - 1) await new Promise(r => setTimeout(r, 3000));
+  }
+  const summary = summarizeRuns(runs);
+  return { runs, summary };
+}
+
+// ─── 결과 종합 ──────────────────────────────────────────
+
+function summarizeRuns(runs) {
+  // 전체 sentiment 투표 (Gemini + Groq 합산)
+  const votes = {};
+  for (const run of runs) {
+    for (const s of [run.geminiResult?.sentiment, run.groqResult?.sentiment]) {
+      if (s) votes[s] = (votes[s] || 0) + 1;
+    }
+  }
+  const sentiment = Object.entries(votes).sort((a, b) => b[1] - a[1])[0]?.[0] || 'neutral';
+
+  // 일치도: Gemini 3회 sentiment 기준
+  const geminiSentiments = runs.map(r => r.geminiResult?.sentiment).filter(Boolean);
+  const uniqueGemini = new Set(geminiSentiments);
+  const consistency =
+    uniqueGemini.size <= 1 ? 'high' :
+    uniqueGemini.size === 2 ? 'medium' : 'low';
+
+  // 종목: 회차별로 Gemini+Groq 합쳐서 1회 카운트, 2회 이상 등장한 것만
+  const stockMap = {};
+  for (const run of runs) {
+    const seen = new Set();
+    for (const stock of [...(run.geminiResult?.stocks || []), ...(run.groqResult?.stocks || [])]) {
+      if (seen.has(stock.ticker)) continue;
+      seen.add(stock.ticker);
+      if (!stockMap[stock.ticker]) {
+        stockMap[stock.ticker] = { ...stock, scores: [], impacts: [], count: 0 };
+      }
+      stockMap[stock.ticker].scores.push(stock.score || 0);
+      stockMap[stock.ticker].impacts.push(stock.impact);
+      stockMap[stock.ticker].count++;
+    }
+  }
+  const stocks = Object.values(stockMap)
+    .filter(s => s.count >= 2)
+    .map(({ scores, impacts, count, ...s }) => {
+      const impactVote = impacts.reduce((acc, v) => { acc[v] = (acc[v] || 0) + 1; return acc; }, {});
+      return {
+        ...s,
+        score: scores.reduce((a, b) => a + b, 0) / scores.length,
+        impact: Object.entries(impactVote).sort((a, b) => b[1] - a[1])[0][0],
+        appearCount: count,
+      };
+    })
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 10);
+
+  // 섹터: 2회 이상 등장
+  const sectorMap = {};
+  for (const run of runs) {
+    const seen = new Set();
+    for (const sec of [...(run.geminiResult?.sectors || []), ...(run.groqResult?.sectors || [])]) {
+      if (seen.has(sec.name)) continue;
+      seen.add(sec.name);
+      if (!sectorMap[sec.name]) sectorMap[sec.name] = { ...sec, count: 0 };
+      sectorMap[sec.name].count++;
+    }
+  }
+  const sectors = Object.values(sectorMap).filter(s => s.count >= 2);
+
+  // 테마: 2회 이상 등장
+  const themeMap = {};
+  for (const run of runs) {
+    const seen = new Set();
+    for (const theme of [...(run.geminiResult?.themes || []), ...(run.groqResult?.themes || [])]) {
+      if (seen.has(theme)) continue;
+      seen.add(theme);
+      themeMap[theme] = (themeMap[theme] || 0) + 1;
+    }
+  }
+  const themes = Object.entries(themeMap)
+    .filter(([, c]) => c >= 2)
+    .sort((a, b) => b[1] - a[1])
+    .map(([t]) => t);
+
+  return { sentiment, consistency, runCount: runs.length, stocks, sectors, themes };
+}
+
 function isConfigured() {
   return !!(process.env.GEMINI_API_KEY || process.env.GROQ_API_KEY);
 }
 
-module.exports = { analyzeDual, isConfigured };
+module.exports = { analyzeDual, runMultiple, summarizeRuns, isConfigured };

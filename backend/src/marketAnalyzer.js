@@ -1,4 +1,4 @@
-const { analyzeDual, isConfigured } = require('./aiAgent');
+const { runMultiple, isConfigured } = require('./aiAgent');
 const {
   getMarketWindowArticles,
   createAnalysis,
@@ -22,18 +22,24 @@ async function runMarketAnalysis() {
   }
 
   const analysisId = createAnalysis(window.from, window.to, articles.length);
-  console.log(`[marketAnalyzer] 듀얼 AI 분석 시작 — 기사 ${articles.length}건`);
+  console.log(`[marketAnalyzer] 듀얼 AI 3회 분석 시작 — 기사 ${articles.length}건`);
 
   try {
-    const { geminiResult, groqResult, errors } = await analyzeDual(articles);
+    const { runs, summary } = await runMultiple(articles, 3);
 
-    saveAnalysisResult(analysisId, { geminiResult, groqResult });
+    // 대표값: 성공한 run 중 첫 번째 (gemini_json / groq_json 하위 호환)
+    const bestRun = runs.find(r => r.geminiResult && r.groqResult)
+      || runs.find(r => r.geminiResult || r.groqResult)
+      || runs[0];
 
-    const geminiStocks = geminiResult?.stocks?.length ?? 0;
-    const groqStocks   = groqResult?.stocks?.length   ?? 0;
-    console.log(`[marketAnalyzer] 완료 — Gemini ${geminiStocks}종목 / Groq ${groqStocks}종목`);
-    if (Object.keys(errors).length) console.warn('[marketAnalyzer] 부분 오류:', errors);
+    saveAnalysisResult(analysisId, {
+      geminiResult: bestRun?.geminiResult || null,
+      groqResult:   bestRun?.groqResult   || null,
+      runs,
+      summary,
+    });
 
+    console.log(`[marketAnalyzer] 완료 — 종합 sentiment: ${summary.sentiment}, 일치도: ${summary.consistency}, 종목: ${summary.stocks.length}개`);
     return analysisId;
   } catch (err) {
     saveAnalysisError(analysisId, err.message);
