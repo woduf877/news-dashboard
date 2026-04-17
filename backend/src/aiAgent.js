@@ -111,13 +111,29 @@ async function runGeminiAnalysis(articles) {
   const { GoogleGenerativeAI } = require('@google/generative-ai');
   const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
   const model = genAI.getGenerativeModel({
-    model: 'gemini-2.5-flash',
+    model: 'gemini-flash-latest',
     generationConfig: { responseMimeType: 'application/json' },
   });
 
   const prompt = `${ANALYST_SYSTEM}\n\n--- 분석 대상 뉴스 ---\n${buildNewsText(articles)}`;
-  const result = await model.generateContent(prompt);
-  return safeJson(result.response.text());
+
+  // 503 일시적 과부하 대비 최대 3회 재시도
+  const MAX_RETRIES = 3;
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const result = await model.generateContent(prompt);
+      return safeJson(result.response.text());
+    } catch (e) {
+      const is503 = e.message?.includes('503') || e.status === 503;
+      if (is503 && attempt < MAX_RETRIES) {
+        const delay = attempt * 5000;
+        console.log(`[aiAgent] Gemini 503 — ${attempt}/${MAX_RETRIES}회 시도, ${delay/1000}초 후 재시도`);
+        await new Promise(r => setTimeout(r, delay));
+      } else {
+        throw e;
+      }
+    }
+  }
 }
 
 // ─── Groq 리뷰 ──────────────────────────────────────────
