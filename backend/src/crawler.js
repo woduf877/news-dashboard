@@ -14,31 +14,31 @@ const parser = new Parser({
 
 // 미국 증시 관련 뉴스 소스
 const US_MARKET_SOURCES = [
-  { name: 'WSJ Markets',      url: 'https://feeds.a.wsj.com/rss/RSSMarketsMain.xml',              category: 'us_market', lang: 'en' },
-  { name: 'CNBC US Markets',  url: 'https://www.cnbc.com/id/15839069/device/rss/rss.html',        category: 'us_market', lang: 'en' },
-  { name: 'Reuters Business', url: 'https://feeds.reuters.com/reuters/businessNews',              category: 'us_market', lang: 'en' },
-  { name: 'Financial Times',  url: 'https://www.ft.com/rss/home/us',                              category: 'us_market', lang: 'en' },
-  { name: 'Seeking Alpha',    url: 'https://seekingalpha.com/market_currents.xml',                category: 'us_market', lang: 'en' },
-  { name: 'Benzinga',         url: 'https://www.benzinga.com/feed',                               category: 'us_market', lang: 'en' },
-  { name: "Barron's",         url: 'https://www.barrons.com/feed/rss/rss.xml',                    category: 'us_market', lang: 'en' },
-  { name: 'Motley Fool',      url: 'https://www.fool.com/feeds/syndication/rss/headlines.aspx',   category: 'us_market', lang: 'en' },
+  { name: 'CNBC US Markets',    url: 'https://www.cnbc.com/id/15839069/device/rss/rss.html',        category: 'us_market', lang: 'en' },
+  { name: 'CNBC Economy',       url: 'https://www.cnbc.com/id/20910258/device/rss/rss.html',        category: 'us_market', lang: 'en' },
+  { name: 'AP Finance',         url: 'https://feeds.apnews.com/rss/apf-finance',                    category: 'us_market', lang: 'en' },
+  { name: 'NPR Business',       url: 'https://feeds.npr.org/1006/rss.xml',                          category: 'us_market', lang: 'en' },
+  { name: 'Seeking Alpha',      url: 'https://seekingalpha.com/market_currents.xml',                category: 'us_market', lang: 'en' },
+  { name: 'Benzinga',           url: 'https://www.benzinga.com/feed',                               category: 'us_market', lang: 'en' },
+  { name: 'Investing.com US',   url: 'https://www.investing.com/rss/news_25.rss',                   category: 'us_market', lang: 'en' },
+  { name: 'Yahoo Finance',      url: 'https://finance.yahoo.com/rss/topstories',                    category: 'us_market', lang: 'en' },
 ];
 
 // 한국 증시 관련 뉴스 소스 (한국어 + 영어)
 const KOREA_MARKET_SOURCES = [
   // 한국 경제·증시 (한국어)
-  { name: '연합뉴스 경제',   url: 'https://www.yna.co.kr/economy/rss.xml',                           category: 'korea_market', lang: 'ko' },
-  { name: '한국경제',        url: 'https://www.hankyung.com/feed/economy',                           category: 'korea_market', lang: 'ko' },
-  { name: '매일경제',        url: 'https://www.mk.co.kr/rss/40300001/',                              category: 'korea_market', lang: 'ko' },
-  { name: '조선비즈',        url: 'https://biz.chosun.com/site/data/rss/rss.xml',                   category: 'korea_market', lang: 'ko' },
-  { name: '머니투데이',      url: 'https://news.mt.co.kr/mtview/mt_m_rss.php',                      category: 'korea_market', lang: 'ko' },
-  { name: '이데일리',        url: 'https://www.edaily.co.kr/rss/feed.xml',                          category: 'korea_market', lang: 'ko' },
+  { name: '한국경제',          url: 'https://www.hankyung.com/feed/economy',                           category: 'korea_market', lang: 'ko' },
+  { name: '매일경제',          url: 'https://www.mk.co.kr/rss/40300001/',                              category: 'korea_market', lang: 'ko' },
+  { name: '파이낸셜뉴스',      url: 'https://www.fnnews.com/rss/fn_economy_all_xml.xml',               category: 'korea_market', lang: 'ko' },
+  { name: '헤럴드경제',        url: 'https://biz.heraldcorp.com/rss/all.xml',                          category: 'korea_market', lang: 'ko' },
+  { name: '뉴스1 경제',        url: 'https://www.news1.kr/rss/economy.xml',                            category: 'korea_market', lang: 'ko' },
   // 영문 한국 경제
-  { name: 'Korea Herald 경제', url: 'https://www.koreaherald.com/rss/business.xml',                 category: 'korea_market', lang: 'en' },
-  { name: 'Korea Times 비즈',  url: 'https://www.koreatimes.co.kr/www/rss/rss_biz.xml',             category: 'korea_market', lang: 'en' },
+  { name: 'Korea Herald 경제', url: 'https://www.koreaherald.com/rss/business.xml',                   category: 'korea_market', lang: 'en' },
   // 글로벌 금융 (한국 증시 영향)
-  { name: 'CNBC Finance',    url: 'https://www.cnbc.com/id/10000664/device/rss/rss.html',           category: 'korea_market', lang: 'en' },
-  { name: 'MarketWatch',     url: 'https://feeds.marketwatch.com/marketwatch/topstories/',          category: 'korea_market', lang: 'en' },
+  { name: 'CNBC Finance',      url: 'https://www.cnbc.com/id/10000664/device/rss/rss.html',           category: 'korea_market', lang: 'en' },
+  { name: 'MarketWatch',       url: 'https://feeds.marketwatch.com/marketwatch/topstories/',          category: 'korea_market', lang: 'en' },
+  { name: 'Investing.com 한국', url: 'https://kr.investing.com/rss/news_25.rss',                      category: 'korea_market', lang: 'ko' },
+  { name: 'Yahoo Finance KOSPI', url: 'https://feeds.finance.yahoo.com/rss/2.0/headline?s=%5EKS11&region=US&lang=en-US', category: 'korea_market', lang: 'en' },
 ];
 
 // 뉴스 소스 목록 (카테고리별 RSS 피드)
