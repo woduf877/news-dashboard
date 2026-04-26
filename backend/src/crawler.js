@@ -16,7 +16,7 @@ const parser = new Parser({
 const US_MARKET_SOURCES = [
   { name: 'CNBC US Markets',    url: 'https://www.cnbc.com/id/15839069/device/rss/rss.html',        category: 'us_market', lang: 'en' },
   { name: 'CNBC Economy',       url: 'https://www.cnbc.com/id/20910258/device/rss/rss.html',        category: 'us_market', lang: 'en' },
-  { name: 'AP Finance',         url: 'https://feeds.apnews.com/rss/apf-finance',                    category: 'us_market', lang: 'en' },
+  { name: 'Fortune',            url: 'https://fortune.com/feed/',                                   category: 'us_market', lang: 'en' },
   { name: 'NPR Business',       url: 'https://feeds.npr.org/1006/rss.xml',                          category: 'us_market', lang: 'en' },
   { name: 'Seeking Alpha',      url: 'https://seekingalpha.com/market_currents.xml',                category: 'us_market', lang: 'en' },
   { name: 'Benzinga',           url: 'https://www.benzinga.com/feed',                               category: 'us_market', lang: 'en' },
@@ -29,9 +29,9 @@ const KOREA_MARKET_SOURCES = [
   // 한국 경제·증시 (한국어)
   { name: '한국경제',          url: 'https://www.hankyung.com/feed/economy',                           category: 'korea_market', lang: 'ko' },
   { name: '매일경제',          url: 'https://www.mk.co.kr/rss/40300001/',                              category: 'korea_market', lang: 'ko' },
-  { name: '파이낸셜뉴스',      url: 'https://www.fnnews.com/rss/fn_economy_all_xml.xml',               category: 'korea_market', lang: 'ko' },
-  { name: '헤럴드경제',        url: 'https://biz.heraldcorp.com/rss/all.xml',                          category: 'korea_market', lang: 'ko' },
-  { name: '뉴스1 경제',        url: 'https://www.news1.kr/rss/economy.xml',                            category: 'korea_market', lang: 'ko' },
+  { name: '서울경제',          url: 'https://www.sedaily.com/RSS/SeoulA.xml',                          category: 'korea_market', lang: 'ko' },
+  { name: '아시아경제',        url: 'https://view.asiae.co.kr/rss/all.xml',                            category: 'korea_market', lang: 'ko' },
+  { name: '이투데이',          url: 'https://www.etoday.co.kr/rss/rss_economy.xml',                    category: 'korea_market', lang: 'ko' },
   // 영문 한국 경제
   { name: 'Korea Herald 경제', url: 'https://www.koreaherald.com/rss/business.xml',                   category: 'korea_market', lang: 'en' },
   // 글로벌 금융 (한국 증시 영향)
