@@ -29,9 +29,9 @@ const KOREA_MARKET_SOURCES = [
   // 한국 경제·증시 (한국어)
   { name: '한국경제',          url: 'https://www.hankyung.com/feed/economy',                           category: 'korea_market', lang: 'ko' },
   { name: '매일경제',          url: 'https://www.mk.co.kr/rss/40300001/',                              category: 'korea_market', lang: 'ko' },
-  { name: 'KBS 경제',          url: 'https://news.kbs.co.kr/rss/rss.do?ct_s=06',                      category: 'korea_market', lang: 'ko' },
-  { name: 'YTN 경제',          url: 'https://www.ytn.co.kr/rss/rss.php?ct_c=101',                     category: 'korea_market', lang: 'ko' },
-  { name: '연합뉴스',          url: 'https://www.yna.co.kr/rss/news.xml',                              category: 'korea_market', lang: 'ko' },
+  { name: '뉴시스 경제',        url: 'https://www.newsis.com/RSS/economy.xml',                          category: 'korea_market', lang: 'ko' },
+  { name: '뉴시스 금융',        url: 'https://www.newsis.com/RSS/bank.xml',                             category: 'korea_market', lang: 'ko' },
+  { name: '뉴시스 산업',        url: 'https://www.newsis.com/RSS/industry.xml',                         category: 'korea_market', lang: 'ko' },
   // 영문 한국 경제
   { name: 'Korea Herald 경제', url: 'https://www.koreaherald.com/rss/business.xml',                   category: 'korea_market', lang: 'en' },
   // 글로벌 금융 (한국 증시 영향)
