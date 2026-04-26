@@ -16,9 +16,10 @@ const CATEGORY_LABELS = {
 };
 
 const NAV_TABS = [
-  { key: 'news',      label: '📰 뉴스' },
-  { key: 'analytics', label: '📊 키워드 분석' },
-  { key: 'market',    label: '📈 증시 키워드' },
+  { key: 'news',         label: '📰 뉴스' },
+  { key: 'analytics',   label: '📊 키워드 분석' },
+  { key: 'korea_market', label: '🇰🇷 한국 증시' },
+  { key: 'us_market',   label: '🇺🇸 미국 증시' },
 ];
 
 export default function App() {
@@ -132,8 +133,10 @@ export default function App() {
           </div>
         ) : tab === 'analytics' ? (
           <Analytics />
+        ) : tab === 'korea_market' ? (
+          <Market marketFilter="korea" />
         ) : (
-          <Market />
+          <Market marketFilter="us" />
         )}
       </main>
 

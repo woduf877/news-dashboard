@@ -372,9 +372,28 @@ GROQ_API_KEY=여기에_Groq_키`}
   );
 }
 
+// ─── 시장 필터 유틸 ─────────────────────────────────────
+
+const MARKET_CFG = {
+  korea: { markets: ['KOSPI', 'KOSDAQ'], title: '한국 증시 AI 듀얼 분석', flag: '🇰🇷' },
+  us:    { markets: ['NYSE', 'NASDAQ'],  title: '미국 증시 AI 듀얼 분석', flag: '🇺🇸' },
+};
+
+function filterByMarket(result, filter) {
+  if (!result || !filter) return result;
+  const { markets } = MARKET_CFG[filter];
+  return { ...result, stocks: (result.stocks || []).filter(s => markets.includes(s.market)) };
+}
+
+function filterSummaryByMarket(summary, filter) {
+  if (!summary || !filter) return summary;
+  const { markets } = MARKET_CFG[filter];
+  return { ...summary, stocks: (summary.stocks || []).filter(s => markets.includes(s.market)) };
+}
+
 // ─── 메인 페이지 ────────────────────────────────────────
 
-export default function Market() {
+export default function Market({ marketFilter = 'korea' }) {
   const [data, setData]           = useState(null);
   const [hourly, setHourly]       = useState([]);
   const [loading, setLoading]     = useState(true);
@@ -415,21 +434,27 @@ export default function Market() {
   const isPending    = status?.status === 'pending';
   const isError      = status?.status === 'error';
   const aiConfigured = data?.aiConfigured;
+  const cfg          = MARKET_CFG[marketFilter];
 
-  // 양쪽이 동의한 ticker / 의견 다른 ticker 계산
+  // 시장별 필터링된 결과
+  const geminiFiltered  = filterByMarket(analysis?.gemini, marketFilter);
+  const groqFiltered    = filterByMarket(analysis?.groq,   marketFilter);
+  const summaryFiltered = filterSummaryByMarket(analysis?.summary, marketFilter);
+
+  // 양쪽이 동의한 ticker / 의견 다른 ticker 계산 (필터 적용 후)
   const agreedTickers = (() => {
-    if (!analysis?.gemini?.stocks || !analysis?.groq?.stocks) return [];
-    const groqTickers = new Set(analysis.groq.stocks.map(s => s.ticker));
-    return analysis.gemini.stocks
+    if (!geminiFiltered?.stocks || !groqFiltered?.stocks) return [];
+    const groqTickers = new Set(groqFiltered.stocks.map(s => s.ticker));
+    return geminiFiltered.stocks
       .filter(s => groqTickers.has(s.ticker))
       .filter(s => {
-        const g = analysis.groq.stocks.find(x => x.ticker === s.ticker);
+        const g = groqFiltered.stocks.find(x => x.ticker === s.ticker);
         return g && g.impact === s.impact;
       })
       .map(s => s.ticker);
   })();
 
-  const disagreedTickers = (analysis?.groq?.stocksDisagreed || []).map(d => d.ticker);
+  const disagreedTickers = (groqFiltered?.stocksDisagreed || []).map(d => d.ticker);
 
   const fmtTime = iso => iso ? new Date(iso).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : null;
 
@@ -439,7 +464,7 @@ export default function Market() {
       {/* ── 헤더 ── */}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h2 className="text-lg font-bold text-gray-900 dark:text-white">한국 증시 AI 듀얼 분석</h2>
+          <h2 className="text-lg font-bold text-gray-900 dark:text-white">{cfg.flag} {cfg.title}</h2>
           <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
             Gemini(1차 분석) + Groq(감독·리뷰) 이중 검증
           </p>
@@ -487,8 +512,8 @@ export default function Market() {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {[
               { label: '분석 기사',     value: `${(data?.articleCount || 0).toLocaleString()}건` },
-              { label: 'Gemini 종목',  value: `${analysis?.gemini?.stocks?.length || 0}개` },
-              { label: 'Groq 종목',    value: `${analysis?.groq?.stocks?.length   || 0}개` },
+              { label: 'Gemini 종목',  value: `${geminiFiltered?.stocks?.length || 0}개` },
+              { label: 'Groq 종목',    value: `${groqFiltered?.stocks?.length   || 0}개` },
               { label: '양쪽 동의 종목', value: `${agreedTickers.length}개`, highlight: true },
             ].map(({ label, value, highlight }) => (
               <div key={label} className={`rounded-2xl border p-4 ${highlight ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' : 'bg-white dark:bg-gray-900 border-gray-100 dark:border-gray-800'}`}>
@@ -525,14 +550,24 @@ export default function Market() {
                 )}
               </div>
 
+              {/* ── 크로스마켓 인사이트 ── */}
+              {(analysis.gemini?.crossMarketInsight || analysis.groq?.crossMarketInsight) && (
+                <div className="bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-xl p-4">
+                  <p className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 mb-1">🌐 한·미 증시 상호 영향</p>
+                  <p className="text-xs text-indigo-700 dark:text-indigo-300 leading-relaxed">
+                    {analysis.gemini?.crossMarketInsight || analysis.groq?.crossMarketInsight}
+                  </p>
+                </div>
+              )}
+
               {/* ── 종합 결과 ── */}
-              {analysis.summary && <SummaryPanel summary={analysis.summary} />}
+              {summaryFiltered && <SummaryPanel summary={summaryFiltered} />}
 
               {/* ── 3회 상세 결과 (접기/펼치기) ── */}
               {analysis.runs && <RunsDetail runs={analysis.runs} />}
 
               {/* ── 대표 듀얼 패널 (마지막 성공 회차) ── */}
-              {(analysis.gemini || analysis.groq) && (
+              {(geminiFiltered || groqFiltered) && (
                 <div>
                   <p className="text-xs text-gray-400 dark:text-gray-600 mb-3">대표 회차 결과 (Gemini + Groq)</p>
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -540,7 +575,7 @@ export default function Market() {
                       label="Gemini Flash — 1차 분석가"
                       model="Google Gemini"
                       color="bg-blue-600"
-                      result={analysis.gemini}
+                      result={geminiFiltered}
                       agreedTickers={agreedTickers}
                       disagreedTickers={disagreedTickers}
                     />
@@ -548,7 +583,7 @@ export default function Market() {
                       label="Groq Llama 3.3 70B — 감독·리뷰어"
                       model="Groq"
                       color="bg-orange-500"
-                      result={analysis.groq}
+                      result={groqFiltered}
                       agreedTickers={agreedTickers}
                       disagreedTickers={disagreedTickers}
                     />
