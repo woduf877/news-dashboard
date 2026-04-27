@@ -4,6 +4,7 @@ import CategoryFilter from './components/CategoryFilter';
 import NewsGrid from './components/NewsGrid';
 import Analytics from './pages/Analytics';
 import Market from './pages/Market';
+import StockData from './pages/StockData';
 
 const CATEGORY_LABELS = {
   all:        '전체',
@@ -20,6 +21,7 @@ const NAV_TABS = [
   { key: 'analytics',   label: '📊 키워드 분석' },
   { key: 'korea_market', label: '🇰🇷 한국 증시' },
   { key: 'us_market',   label: '🇺🇸 미국 증시' },
+  { key: 'stock_data',  label: '📋 주가 데이터' },
 ];
 
 export default function App() {
@@ -135,8 +137,10 @@ export default function App() {
           <Analytics />
         ) : tab === 'korea_market' ? (
           <Market marketFilter="korea" />
-        ) : (
+        ) : tab === 'us_market' ? (
           <Market marketFilter="us" />
+        ) : (
+          <StockData />
         )}
       </main>
 

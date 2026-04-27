@@ -48,6 +48,25 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_kw_date     ON keyword_stats(date DESC);
   CREATE INDEX IF NOT EXISTS idx_kw_category ON keyword_stats(category);
 
+  CREATE TABLE IF NOT EXISTS stock_daily (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticker      TEXT NOT NULL,
+    name        TEXT,
+    market      TEXT,
+    trade_date  TEXT NOT NULL,
+    close       INTEGER DEFAULT 0,
+    cap         INTEGER DEFAULT 0,
+    inst_buy    INTEGER DEFAULT 0,
+    inst_sell   INTEGER DEFAULT 0,
+    for_buy     INTEGER DEFAULT 0,
+    for_sell    INTEGER DEFAULT 0,
+    UNIQUE(ticker, trade_date)
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_sd_date   ON stock_daily(trade_date DESC);
+  CREATE INDEX IF NOT EXISTS idx_sd_ticker ON stock_daily(ticker);
+  CREATE INDEX IF NOT EXISTS idx_sd_market ON stock_daily(market, trade_date DESC);
+
   CREATE TABLE IF NOT EXISTS market_analysis (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     analyzed_at   TEXT DEFAULT (datetime('now')),
@@ -305,6 +324,148 @@ function keywordStatsEmpty() {
   return db.prepare(`SELECT COUNT(*) as cnt FROM keyword_stats`).get().cnt === 0;
 }
 
+// ─── 주가 데이터 저장/조회 ───────────────────────────
+
+function saveStockDays(rows) {
+  const upsert = db.prepare(`
+    INSERT INTO stock_daily
+      (ticker, name, market, trade_date, close, cap, inst_buy, inst_sell, for_buy, for_sell)
+    VALUES
+      (@ticker, @name, @market, @trade_date, @close, @cap, @inst_buy, @inst_sell, @for_buy, @for_sell)
+    ON CONFLICT(ticker, trade_date) DO UPDATE SET
+      close     = excluded.close,
+      cap       = excluded.cap,
+      inst_buy  = excluded.inst_buy,
+      inst_sell = excluded.inst_sell,
+      for_buy   = excluded.for_buy,
+      for_sell  = excluded.for_sell
+  `);
+  const run = db.transaction(items => {
+    for (const r of items) upsert.run(r);
+  });
+  run(rows);
+}
+
+function cleanOldStockDays(keepDays = 14) {
+  const result = db.prepare(`
+    DELETE FROM stock_daily
+    WHERE trade_date < replace(date('now', '-' || ? || ' days'), '-', '')
+  `).run(keepDays);
+  return result.changes;
+}
+
+// 시장별 최신 날짜 목록 조회 (날짜 내림차순)
+function getStockDates(market) {
+  return db.prepare(`
+    SELECT DISTINCT trade_date
+    FROM stock_daily
+    WHERE market = ?
+    ORDER BY trade_date DESC
+    LIMIT 14
+  `).all(market).map(r => r.trade_date);
+}
+
+// 특정 날짜의 시총 TOP 100 (+ 14일 누적 순매수 계산)
+function getStockSummary(market) {
+  // 최신 날짜
+  const latestRow = db.prepare(`
+    SELECT trade_date FROM stock_daily
+    WHERE market = ? ORDER BY trade_date DESC LIMIT 1
+  `).get(market);
+  if (!latestRow) return [];
+
+  const latest = latestRow.trade_date;
+
+  // 최신일 기준 시총 TOP 100 종목 목록
+  const top100 = db.prepare(`
+    SELECT ticker, name FROM stock_daily
+    WHERE market = ? AND trade_date = ?
+    ORDER BY cap DESC LIMIT 100
+  `).all(market, latest);
+
+  if (!top100.length) return [];
+  const tickers = top100.map(r => r.ticker);
+  const placeholders = tickers.map(() => '?').join(',');
+
+  // 14일 누적 데이터
+  const rows = db.prepare(`
+    SELECT
+      ticker,
+      MAX(CASE WHEN trade_date = ? THEN cap   ELSE 0 END)  AS latest_cap,
+      MAX(CASE WHEN trade_date = ? THEN close ELSE 0 END)  AS latest_close,
+      SUM(inst_buy - inst_sell) AS cum_inst_net,
+      SUM(for_buy  - for_sell)  AS cum_for_net,
+      COUNT(DISTINCT trade_date)                            AS day_count
+    FROM stock_daily
+    WHERE market = ? AND ticker IN (${placeholders})
+    GROUP BY ticker
+  `).all(latest, latest, market, ...tickers);
+
+  // 최신일 종목명 조인
+  const nameMap = Object.fromEntries(top100.map(r => [r.ticker, r.name]));
+
+  return rows.map(r => ({
+    ticker:       r.ticker,
+    name:         nameMap[r.ticker] || r.ticker,
+    market,
+    latestCap:    r.latest_cap,
+    latestClose:  r.latest_close,
+    cumInstNet:   r.cum_inst_net,
+    cumForNet:    r.cum_for_net,
+    cumNet:       r.cum_inst_net + r.cum_for_net,
+    cumRatio:     r.latest_cap > 0
+                    ? (r.cum_inst_net + r.cum_for_net) / r.latest_cap
+                    : 0,
+    dayCount:     r.day_count,
+  })).sort((a, b) => b.latestCap - a.latestCap);
+}
+
+// 특정 종목의 14일 일별 데이터
+function getStockTimeSeries(ticker) {
+  return db.prepare(`
+    SELECT
+      trade_date,
+      close,
+      cap,
+      inst_buy - inst_sell AS inst_net,
+      for_buy  - for_sell  AS for_net,
+      CASE WHEN cap > 0 THEN CAST(inst_buy - inst_sell + for_buy - for_sell AS REAL) / cap ELSE 0 END AS ratio
+    FROM stock_daily
+    WHERE ticker = ?
+    ORDER BY trade_date ASC
+  `).all(ticker);
+}
+
+// 시장 전체 일별 집계 (TOP 100 합산)
+function getMarketDailySeries(market) {
+  const top100 = db.prepare(`
+    SELECT ticker FROM stock_daily
+    WHERE market = ? AND trade_date = (
+      SELECT MAX(trade_date) FROM stock_daily WHERE market = ?
+    )
+    ORDER BY cap DESC LIMIT 100
+  `).all(market, market).map(r => r.ticker);
+
+  if (!top100.length) return [];
+  const ph = top100.map(() => '?').join(',');
+
+  return db.prepare(`
+    SELECT
+      trade_date,
+      SUM(inst_buy - inst_sell + for_buy - for_sell) AS sum_net,
+      SUM(cap)                                        AS sum_cap
+    FROM stock_daily
+    WHERE market = ? AND ticker IN (${ph})
+    GROUP BY trade_date
+    ORDER BY trade_date ASC
+  `).all(market, ...top100).map(r => ({
+    trade_date: r.trade_date,
+    sumNet:     r.sum_net,
+    sumCap:     r.sum_cap,
+    ratio:      r.sum_cap > 0 ? r.sum_net / r.sum_cap : 0,
+  }));
+}
+
 // ─── AI 분석 결과 저장/조회 ──────────────────────────
 
 function createAnalysis(windowFrom, windowTo, articleCount) {
@@ -418,6 +579,12 @@ module.exports = {
   getTrendData,
   getAllArticlesForKeywords,
   keywordStatsEmpty,
+  saveStockDays,
+  cleanOldStockDays,
+  getStockDates,
+  getStockSummary,
+  getStockTimeSeries,
+  getMarketDailySeries,
   getMarketWindowArticles,
   getMarketHourlyCount,
   createAnalysis,

@@ -18,7 +18,11 @@ const {
   getMarketHourlyCount,
   getLatestAnalysis,
   getAnalysisStatus,
+  getStockSummary,
+  getStockTimeSeries,
+  getMarketDailySeries,
 } = require('./db');
+const { collectStockData } = require('./stockCollector');
 const { extractFromArticles, computeMarketKeywords, getMarketWindow } = require('./keywords');
 const { runCrawl, NEWS_SOURCES, KOREA_MARKET_SOURCES } = require('./crawler');
 const { runMarketAnalysis } = require('./marketAnalyzer');
@@ -177,6 +181,47 @@ function getNextCrawlTimes(now) {
 
   return results.sort();
 }
+
+// ─── 주가 데이터 API ─────────────────────────────────
+
+// 시장 전체 일별 수급 비율 (시장 차트용)
+app.get('/api/stocks/market-series', (req, res) => {
+  const market = (req.query.market || 'KOSPI').toUpperCase();
+  try {
+    res.json({ ok: true, data: getMarketDailySeries(market) });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// 시총 TOP100 누적 수급 비율 목록 (종목 리스트용)
+app.get('/api/stocks/summary', (req, res) => {
+  const market = (req.query.market || 'KOSPI').toUpperCase();
+  try {
+    res.json({ ok: true, data: getStockSummary(market) });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// 개별 종목 14일 시계열 (상세 차트용)
+app.get('/api/stocks/series/:ticker', (req, res) => {
+  try {
+    res.json({ ok: true, data: getStockTimeSeries(req.params.ticker) });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// 수동 수집 트리거 (테스트용)
+app.post('/api/stocks/collect', async (req, res) => {
+  try {
+    const result = await collectStockData();
+    res.json({ ok: true, data: result });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
 
 // ─── 서버 시작 ───────────────────────────────────────
 
