@@ -112,41 +112,41 @@ const STOCKS_RAW = [
   ['009410','태영건설','KOSPI',1, -1, -1],
 
   // ── KOSDAQ 100 ─────────────────────────────────────────
-  ['247540','에코프로비엠','KOSDAQ',13, 50, 40],
-  ['086520','에코프로','KOSDAQ',17, 60, 50],
-  ['196170','알테오젠','KOSDAQ',11, 40, 30],
-  ['028300','HLB','KOSDAQ',6,-20,-15],
-  ['277810','레인보우로보틱스','KOSDAQ',4, 25, 20],
-  ['141080','리가켐바이오','KOSDAQ',3, 10,  8],
-  ['377300','카카오페이','KOSDAQ',5,-15,-10],
-  ['096530','씨젠','KOSDAQ',1, -3, -2],
-  ['086900','메디톡스','KOSDAQ',1, -2, -1],
-  ['290650','엘앤씨바이오','KOSDAQ',2,  5,  4],
-  ['214450','파마리서치','KOSDAQ',2,  6,  5],
-  ['068760','셀트리온제약','KOSDAQ',3, -8, -5],
-  ['069620','대웅제약','KOSDAQ',2,  3,  2],
-  ['035900','JYP엔터','KOSDAQ',2,  4,  3],
-  ['041510','에스엠','KOSDAQ',2,  3,  2],
-  ['122870','YG엔터테인먼트','KOSDAQ',1,  2,  1],
-  ['253450','스튜디오드래곤','KOSDAQ',2,  2,  1],
-  ['263750','펄어비스','KOSDAQ',2, -3, -2],
-  ['112040','위메이드','KOSDAQ',1, -2, -1],
-  ['293490','카카오게임즈','KOSDAQ',2, -3, -2],
-  ['095660','네오위즈','KOSDAQ',1, -1, -1],
-  ['240810','원익IPS','KOSDAQ',2,  4,  3],
-  ['357780','솔브레인','KOSDAQ',2,  3,  2],
+  ['247540','에코프로비엠','KOSDAQ',13,-30,-20],
+  ['086520','에코프로','KOSDAQ',17,-40,-25],
+  ['196170','알테오젠','KOSDAQ',11, 35, 25],
+  ['028300','HLB','KOSDAQ',6,-25,-18],
+  ['277810','레인보우로보틱스','KOSDAQ',4, 20, 15],
+  ['141080','리가켐바이오','KOSDAQ',3,  8,  6],
+  ['377300','카카오페이','KOSDAQ',5,-18,-12],
+  ['096530','씨젠','KOSDAQ',1, -5, -3],
+  ['086900','메디톡스','KOSDAQ',1, -4, -3],
+  ['290650','엘앤씨바이오','KOSDAQ',2, -3,  2],
+  ['214450','파마리서치','KOSDAQ',2,  5,  4],
+  ['068760','셀트리온제약','KOSDAQ',3,-12, -8],
+  ['069620','대웅제약','KOSDAQ',2, -2,  2],
+  ['035900','JYP엔터','KOSDAQ',2, -4, -3],
+  ['041510','에스엠','KOSDAQ',2, -3, -2],
+  ['122870','YG엔터테인먼트','KOSDAQ',1, -2, -1],
+  ['253450','스튜디오드래곤','KOSDAQ',2, -2, -1],
+  ['263750','펄어비스','KOSDAQ',2, -5, -3],
+  ['112040','위메이드','KOSDAQ',1, -4, -2],
+  ['293490','카카오게임즈','KOSDAQ',2, -5, -3],
+  ['095660','네오위즈','KOSDAQ',1, -2, -1],
+  ['240810','원익IPS','KOSDAQ',2,  3,  2],
+  ['357780','솔브레인','KOSDAQ',2,  4,  3],
   ['039030','이오테크닉스','KOSDAQ',1,  2,  1],
-  ['067160','아프리카TV','KOSDAQ',1, -1,  1],
-  ['131970','두산테스나','KOSDAQ',1,  2,  1],
-  ['226950','올릭스','KOSDAQ',0.5, 1,  1],
+  ['067160','아프리카TV','KOSDAQ',1, -2, -1],
+  ['131970','두산테스나','KOSDAQ',1,  3,  2],
+  ['226950','올릭스','KOSDAQ',0.5,-1, -1],
   ['237690','에스티팜','KOSDAQ',1,  2,  1],
-  ['039200','오스코텍','KOSDAQ',0.8, 1,  1],
-  ['085660','차바이오텍','KOSDAQ',0.8, 1,  1],
-  ['069080','웹젠','KOSDAQ',0.8,-1, -1],
-  ['041140','넥슨게임즈','KOSDAQ',1,  2,  1],
-  ['192080','더블유게임즈','KOSDAQ',1,  1,  1],
-  ['112110','에이치디씨현대산업개발','KOSDAQ',0.5,-1,-1],
-  ['215600','신라젠','KOSDAQ',0.3,-1, -1],
+  ['039200','오스코텍','KOSDAQ',0.8,-1, -1],
+  ['085660','차바이오텍','KOSDAQ',0.8,-2, -1],
+  ['069080','웹젠','KOSDAQ',0.8,-2, -2],
+  ['041140','넥슨게임즈','KOSDAQ',1,  1,  1],
+  ['192080','더블유게임즈','KOSDAQ',1, -1, -1],
+  ['112110','에이치디씨현대산업개발','KOSDAQ',0.5,-2,-1],
+  ['215600','신라젠','KOSDAQ',0.3,-2, -2],
   // 이하 생성 종목 (65개)
 ];
 
@@ -183,15 +183,16 @@ function buildAllStocks() {
     } while (used.has(name));
     used.add(name);
 
-    const cap  = (0.2 + Math.random() * 1.3) * 1e12;
-    const sign = () => (Math.random() > 0.45 ? 1 : -1);
+    const cap  = (0.15 + Math.random() * 0.9) * 1e12;  // KOSDAQ 시총 더 작게
+    // KOSDAQ: 매도 압력 강함 → 60% 확률로 음수
+    const sign = () => (Math.random() > 0.6 ? 1 : -1);
     raw.push({
       ticker:   String(ti).padStart(6, '0'),
       name,
       market:   'KOSDAQ',
       baseCap:  cap,
-      baseInst: sign() * cap * (0.0015 + Math.random() * 0.003),
-      baseFor:  sign() * cap * (0.001  + Math.random() * 0.002),
+      baseInst: sign() * cap * (0.002 + Math.random() * 0.005),
+      baseFor:  sign() * cap * (0.001 + Math.random() * 0.003),
     });
     ti += Math.floor(10 + Math.random() * 90);
   }
@@ -213,10 +214,13 @@ function buildTradingDates() {
 }
 
 function generateDays(stock, dates) {
+  // KOSDAQ는 변동성 2배, 종가 등락도 더 크게
+  const vol = stock.market === 'KOSDAQ' ? 5.5 : 3;
+  const capVol = stock.market === 'KOSDAQ' ? 0.09 : 0.05;
   return dates.map(date => {
-    const cap     = Math.round(stock.baseCap * (1 + (Math.random() - 0.5) * 0.05));
-    const instNet = Math.round(stock.baseInst + (Math.random() - 0.5) * Math.abs(stock.baseInst) * 3);
-    const forNet  = Math.round(stock.baseFor  + (Math.random() - 0.5) * Math.abs(stock.baseFor)  * 3);
+    const cap     = Math.round(stock.baseCap * (1 + (Math.random() - 0.5) * capVol));
+    const instNet = Math.round(stock.baseInst + (Math.random() - 0.5) * Math.abs(stock.baseInst) * vol);
+    const forNet  = Math.round(stock.baseFor  + (Math.random() - 0.5) * Math.abs(stock.baseFor)  * vol);
     return { date, cap, instNet, forNet, ratio: (instNet + forNet) / cap };
   });
 }
