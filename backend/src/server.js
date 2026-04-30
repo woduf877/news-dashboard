@@ -22,7 +22,7 @@ const {
   getStockTimeSeries,
   getMarketDailySeries,
 } = require('./db');
-const { collectStockData } = require('./stockCollector');
+const { collectStockData, getCollectionDate, krxDiagnose } = require('./stockCollector');
 const { extractFromArticles, computeMarketKeywords, getMarketWindow } = require('./keywords');
 const { runCrawl, NEWS_SOURCES, KOREA_MARKET_SOURCES } = require('./crawler');
 const { runMarketAnalysis } = require('./marketAnalyzer');
@@ -213,13 +213,20 @@ app.get('/api/stocks/series/:ticker', (req, res) => {
   }
 });
 
-// 수동 수집 트리거 (테스트용)
-app.post('/api/stocks/collect', async (req, res) => {
+// 수동 수집 트리거 (비동기 — 즉시 응답)
+app.post('/api/stocks/collect', (req, res) => {
+  res.json({ ok: true, message: '주가 수집 시작됨 (백그라운드)' });
+  collectStockData().catch(e => console.error('[api] 주가 수집 오류:', e.message));
+});
+
+// KRX API 진단 (날짜·필드명 확인용)
+app.get('/api/stocks/diagnose', async (req, res) => {
+  const date = getCollectionDate();
   try {
-    const result = await collectStockData();
-    res.json({ ok: true, data: result });
+    const result = await krxDiagnose(date);
+    res.json({ ok: true, date, ...result });
   } catch (e) {
-    res.status(500).json({ ok: false, error: e.message });
+    res.status(500).json({ ok: false, date, error: e.message });
   }
 });
 

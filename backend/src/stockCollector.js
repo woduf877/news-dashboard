@@ -203,4 +203,36 @@ async function collectStockData() {
   return summary;
 }
 
-module.exports = { collectStockData, getCollectionDate };
+// ─── 진단 함수 (KRX API 필드명 확인용) ──────────────────────
+
+async function krxDiagnose(trdDd) {
+  // 1. 시총 API 응답 구조 확인 (상위 3개 종목만)
+  const capData = await krxPost({
+    bld: 'MDCSTAT01501', mktId: 'STK', trdDd,
+    share: '1', money: '1', csvxls_isNo: 'false',
+  });
+  const capRows = (capData.OutBlock_1 || capData.output || []).slice(0, 3);
+
+  if (!capRows.length) {
+    return { capFields: [], capSample: [], invFields: [], invSample: {} };
+  }
+
+  // 2. 투자자 API 응답 구조 확인 (첫 번째 종목만)
+  const firstIsin = capRows[0]?.ISU_CD || capRows[0]?.ISU_SRT_CD || '';
+  let invData = {};
+  if (firstIsin) {
+    const raw = await krxPost({
+      bld: 'MDCSTAT02303', isuCd: firstIsin, trdDd, csvxls_isNo: 'false',
+    });
+    invData = (raw.OutBlock_1 || [])[0] || raw.output?.[0] || {};
+  }
+
+  return {
+    capFields:  capRows.length ? Object.keys(capRows[0]) : [],
+    capSample:  capRows.map(r => ({ ISU_SRT_CD: r.ISU_SRT_CD, ISU_CD: r.ISU_CD, ISU_ABBRV: r.ISU_ABBRV, MKTCAP: r.MKTCAP })),
+    invFields:  Object.keys(invData),
+    invSample:  invData,
+  };
+}
+
+module.exports = { collectStockData, getCollectionDate, krxDiagnose };
