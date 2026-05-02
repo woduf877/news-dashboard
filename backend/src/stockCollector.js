@@ -31,6 +31,13 @@ const MST_URLS = {
 };
 
 const HISTORY_DAYS = 14;
+const collectionStatus = {
+  running: false,
+  startedAt: null,
+  finishedAt: null,
+  lastResult: null,
+  lastError: null,
+};
 
 // ─── 토큰 관리 (파일 + 메모리 캐시, 24시간) ─────────────
 // 서버 재시작 시에도 토큰 재사용 → KIS 재발급 횟수 최소화
@@ -366,7 +373,35 @@ async function enrichMissingHistory(top100, market, token, missingDates, batchSi
 
 // ─── 메인 수집 함수 ──────────────────────────────────────
 
+function getStockCollectionStatus() {
+  return { ...collectionStatus };
+}
+
 async function collectStockData() {
+  if (collectionStatus.running) {
+    console.log('[kis] 이미 주가 수집 실행 중 — 중복 요청 무시');
+    return { skipped: true, reason: 'already_running', status: getStockCollectionStatus() };
+  }
+
+  collectionStatus.running = true;
+  collectionStatus.startedAt = new Date().toISOString();
+  collectionStatus.finishedAt = null;
+  collectionStatus.lastError = null;
+
+  try {
+    const result = await collectStockDataInternal();
+    collectionStatus.lastResult = result;
+    return result;
+  } catch (e) {
+    collectionStatus.lastError = e.message;
+    throw e;
+  } finally {
+    collectionStatus.running = false;
+    collectionStatus.finishedAt = new Date().toISOString();
+  }
+}
+
+async function collectStockDataInternal() {
   if (!APP_KEY || !APP_SECRET) {
     throw new Error('KIS_APP_KEY 또는 KIS_APP_SECRET이 backend/.env에 설정되지 않았습니다');
   }
@@ -409,6 +444,7 @@ async function collectStockData() {
 
     } catch (e) {
       summary.errors.push(`${market}: ${e.message}`);
+      collectionStatus.lastError = e.message;
       console.error(`[kis] ${market} 오류:`, e.message);
     }
   }
@@ -463,4 +499,9 @@ async function kisDiagnose() {
   return result;
 }
 
-module.exports = { collectStockData, getCollectionDate, kisDiagnose };
+module.exports = {
+  collectStockData,
+  getCollectionDate,
+  getStockCollectionStatus,
+  kisDiagnose,
+};

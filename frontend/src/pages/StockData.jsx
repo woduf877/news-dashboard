@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, ReferenceLine,
@@ -95,7 +95,8 @@ function EmptyState({ market, onCollect, collecting }) {
 export default function StockData() {
   const [market,    setMarket]    = useState('KOSPI');
   const [selected,  setSelected]  = useState(null);
-  const [sortDir,   setSortDir]   = useState('asc');
+  const [sortBy,    setSortBy]    = useState('ratio');
+  const [sortDir,   setSortDir]   = useState('desc');
   const [search,    setSearch]    = useState('');
 
   const [summary,      setSummary]      = useState([]);
@@ -103,6 +104,8 @@ export default function StockData() {
   const [stockSeries,  setStockSeries]  = useState([]);
   const [loading,      setLoading]      = useState(true);
   const [collecting,   setCollecting]   = useState(false);
+  const [collectStatus, setCollectStatus] = useState(null);
+  const wasCollectingRef = useRef(false);
 
   // 시장 데이터 로드
   const loadMarket = useCallback(async (m) => {
@@ -126,6 +129,28 @@ export default function StockData() {
 
   useEffect(() => { loadMarket(market); }, [market, loadMarket]);
 
+  const fetchCollectStatus = useCallback(async () => {
+    try {
+      const res = await fetch('/api/stocks/collect-status').then(r => r.json());
+      setCollectStatus(res.data || null);
+      return res.data || null;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchCollectStatus();
+    const timer = setInterval(fetchCollectStatus, 5000);
+    return () => clearInterval(timer);
+  }, [fetchCollectStatus]);
+
+  useEffect(() => {
+    const running = !!collectStatus?.running;
+    if (wasCollectingRef.current && !running) loadMarket(market);
+    wasCollectingRef.current = running;
+  }, [collectStatus?.running, loadMarket, market]);
+
   // 종목 클릭 시 14일 시계열 로드
   const loadStockSeries = useCallback(async (ticker) => {
     try {
@@ -146,11 +171,12 @@ export default function StockData() {
     setCollecting(true);
     try {
       await fetch('/api/stocks/collect', { method: 'POST' });
-      // 최대 5분간 10초마다 데이터 확인
-      for (let i = 0; i < 30; i++) {
-        await new Promise(r => setTimeout(r, 10_000));
-        const res = await fetch(`/api/stocks/summary?market=${market}`).then(r => r.json());
-        if (res.data?.length > 0) {
+      await fetchCollectStatus();
+      // 최대 15분간 5초마다 서버의 실제 수집 상태 확인
+      for (let i = 0; i < 180; i++) {
+        await new Promise(r => setTimeout(r, 5000));
+        const status = await fetchCollectStatus();
+        if (!status?.running) {
           await loadMarket(market);
           return;
         }
@@ -163,7 +189,10 @@ export default function StockData() {
   // 정렬 + 검색
   const ranked = [...summary]
     .filter(s => !search.trim() || s.name.includes(search) || s.ticker.includes(search))
-    .sort((a, b) => sortDir === 'asc' ? a.cumRatio - b.cumRatio : b.cumRatio - a.cumRatio);
+    .sort((a, b) => {
+      const key = sortBy === 'amount' ? 'cumNet' : 'cumRatio';
+      return sortDir === 'asc' ? a[key] - b[key] : b[key] - a[key];
+    });
 
   const displayStock = selected ?? ranked[0] ?? null;
 
@@ -185,6 +214,7 @@ export default function StockData() {
 
   const latestMarketRatio = marketChartData[marketChartData.length - 1]?.ratio ?? 0;
   const latestDate = marketSeries[marketSeries.length - 1]?.trade_date;
+  const isCollecting = collecting || !!collectStatus?.running;
 
   return (
     <div className="max-w-screen-xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-5">
@@ -199,6 +229,12 @@ export default function StockData() {
             </p>
           )}
         </div>
+        {isCollecting && (
+          <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800">
+            <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+            수집 중
+          </span>
+        )}
         <div className="flex rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden ml-auto">
           {['KOSPI', 'KOSDAQ'].map(m => (
             <button key={m} onClick={() => setMarket(m)}
@@ -209,9 +245,9 @@ export default function StockData() {
             </button>
           ))}
         </div>
-        <button onClick={handleCollect} disabled={collecting}
+        <button onClick={handleCollect} disabled={isCollecting}
           className="px-4 py-2 rounded-xl text-xs font-semibold border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 transition-colors">
-          {collecting ? '수집 중…' : '🔄 지금 수집'}
+          {isCollecting ? '수집 중…' : '🔄 지금 수집'}
         </button>
       </div>
 
@@ -220,7 +256,7 @@ export default function StockData() {
           <p className="text-sm text-gray-400 animate-pulse">데이터 로딩 중…</p>
         </div>
       ) : summary.length === 0 ? (
-        <EmptyState market={market} onCollect={handleCollect} collecting={collecting} />
+        <EmptyState market={market} onCollect={handleCollect} collecting={isCollecting} />
       ) : (
         <>
           {/* 시장 전체 차트 */}
@@ -264,19 +300,39 @@ export default function StockData() {
             {/* 종목 목록 */}
             <div className="xl:col-span-2 bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 overflow-hidden flex flex-col">
               <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-800 space-y-2">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-3">
                   <p className="text-sm font-bold text-gray-700 dark:text-gray-200">
-                    시총 TOP100 · 2주 누적 수급 비율
+                    시총 TOP100 · 2주 누적 수급
                     <span className="text-xs font-normal text-gray-400 ml-2">{ranked.length}개</span>
                   </p>
-                  <button onClick={() => setSortDir(d => d === 'asc' ? 'desc' : 'asc')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
-                      sortDir === 'asc'
-                        ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-700 text-blue-600 dark:text-blue-400'
-                        : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-700 text-red-600 dark:text-red-400'
-                    }`}>
-                    {sortDir === 'asc' ? '↑ 오름차순' : '↓ 내림차순'}
-                  </button>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <div className="flex rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+                      {[
+                        { key: 'ratio',  label: '비율' },
+                        { key: 'amount', label: '거래대금' },
+                      ].map(opt => (
+                        <button
+                          key={opt.key}
+                          onClick={() => setSortBy(opt.key)}
+                          className={`px-2.5 py-1.5 text-xs font-semibold transition-colors ${
+                            sortBy === opt.key
+                              ? 'bg-gray-800 dark:bg-gray-100 text-white dark:text-gray-900'
+                              : 'text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800'
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                    <button onClick={() => setSortDir(d => d === 'asc' ? 'desc' : 'asc')}
+                      className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
+                        sortDir === 'asc'
+                          ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-700 text-blue-600 dark:text-blue-400'
+                          : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-700 text-red-600 dark:text-red-400'
+                      }`}>
+                      {sortDir === 'asc' ? '↑' : '↓'}
+                    </button>
+                  </div>
                 </div>
                 <input value={search} onChange={e => setSearch(e.target.value)}
                   placeholder="종목명·코드 검색"
@@ -287,6 +343,7 @@ export default function StockData() {
                 {ranked.map((s, i) => {
                   const isSelected = displayStock?.ticker === s.ticker;
                   const pos  = s.cumRatio >= 0;
+                  const amountPos = s.cumNet >= 0;
                   const barW = Math.min(Math.abs(s.cumRatio) * 4000, 50);
                   return (
                     <div key={s.ticker} onClick={() => handleSelect(s)}
@@ -299,9 +356,14 @@ export default function StockData() {
                             <span className="text-xs text-gray-400 font-mono">{s.ticker}</span>
                           </div>
                         </div>
-                        <span className={`text-sm font-bold tabular-nums shrink-0 ml-2 ${pos ? 'text-red-500' : 'text-blue-500'}`}>
-                          {fmtRatio(s.cumRatio, 3)}
-                        </span>
+                        <div className="text-right shrink-0 ml-2">
+                          <p className={`text-sm font-bold tabular-nums ${pos ? 'text-red-500' : 'text-blue-500'}`}>
+                            {fmtRatio(s.cumRatio, 3)}
+                          </p>
+                          <p className={`text-[11px] font-semibold tabular-nums ${amountPos ? 'text-red-400' : 'text-blue-400'}`}>
+                            {fmtAmt(s.cumNet)}원
+                          </p>
+                        </div>
                       </div>
                       <div className="ml-7 mt-1.5 h-1 rounded-full bg-gray-100 dark:bg-gray-800 overflow-hidden">
                         <div className={`h-full rounded-full ${pos ? 'bg-red-400' : 'bg-blue-400'}`}

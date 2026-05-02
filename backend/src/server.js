@@ -22,7 +22,12 @@ const {
   getStockTimeSeries,
   getMarketDailySeries,
 } = require('./db');
-const { collectStockData, getCollectionDate, kisDiagnose } = require('./stockCollector');
+const {
+  collectStockData,
+  getCollectionDate,
+  getStockCollectionStatus,
+  kisDiagnose,
+} = require('./stockCollector');
 const { extractFromArticles, computeMarketKeywords, getMarketWindow } = require('./keywords');
 const { runCrawl, NEWS_SOURCES, KOREA_MARKET_SOURCES, US_MARKET_SOURCES } = require('./crawler');
 const { runMarketAnalysis } = require('./marketAnalyzer');
@@ -207,8 +212,18 @@ app.get('/api/stocks/series/:ticker', (req, res) => {
 
 // 수동 수집 트리거 (비동기 — 즉시 응답)
 app.post('/api/stocks/collect', (req, res) => {
+  const status = getStockCollectionStatus();
+  if (status.running) {
+    return res.json({ ok: true, message: '이미 주가 수집 중입니다', status });
+  }
+
   res.json({ ok: true, message: '주가 수집 시작됨 (백그라운드)' });
   collectStockData().catch(e => console.error('[api] 주가 수집 오류:', e.message));
+});
+
+// 주가 수집 상태
+app.get('/api/stocks/collect-status', (req, res) => {
+  res.json({ ok: true, data: getStockCollectionStatus() });
 });
 
 // KIS API 진단 (토큰·필드명 확인용)
