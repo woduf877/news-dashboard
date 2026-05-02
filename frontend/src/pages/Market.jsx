@@ -279,6 +279,47 @@ function SummaryPanel({ summary }) {
   );
 }
 
+function KoreaStockTrendInsightPanel({ gemini, groq }) {
+  const geminiInsight = gemini?.koreaStockTrendInsight;
+  const groqInsight = groq?.koreaStockTrendInsight;
+  const groqReview = groq?.koreaStockTrendReview;
+
+  return (
+    <div className="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-xl p-4">
+      <div className="flex items-center justify-between gap-3 mb-3">
+        <div>
+          <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-300">한국 주가 데이터 반영 리뷰</p>
+          <p className="text-xs text-emerald-600/70 dark:text-emerald-500 mt-0.5">최근 수급비율과 14일 순매수 흐름을 AI가 어떻게 해석했는지</p>
+        </div>
+        <span className="px-2 py-1 rounded-lg bg-white/70 dark:bg-gray-900/50 border border-emerald-200 dark:border-emerald-800 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300">
+          KOSPI · KOSDAQ
+        </span>
+      </div>
+
+      {geminiInsight || groqInsight || groqReview ? (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+          <div className="bg-white/75 dark:bg-gray-900/50 rounded-lg border border-emerald-100 dark:border-emerald-800 p-3">
+            <p className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300 mb-1">Gemini 수급 인사이트</p>
+            <p className="text-xs text-emerald-800 dark:text-emerald-200 leading-relaxed">
+              {geminiInsight || '이번 저장 결과에는 Gemini의 수급 인사이트가 없습니다.'}
+            </p>
+          </div>
+          <div className="bg-white/75 dark:bg-gray-900/50 rounded-lg border border-emerald-100 dark:border-emerald-800 p-3">
+            <p className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300 mb-1">Groq 수급 리뷰</p>
+            <p className="text-xs text-emerald-800 dark:text-emerald-200 leading-relaxed">
+              {groqReview || groqInsight || '이번 저장 결과에는 Groq의 수급 리뷰가 없습니다.'}
+            </p>
+          </div>
+        </div>
+      ) : (
+        <p className="text-xs text-emerald-700 dark:text-emerald-300 leading-relaxed">
+          기존 저장 결과에는 주가 데이터 반영 리뷰 필드가 없습니다. 지금 분석을 다시 실행하면 이 영역에 수급 동향 인사이트가 표시됩니다.
+        </p>
+      )}
+    </div>
+  );
+}
+
 // 3회 상세 결과 (접기/펼치기)
 function RunsDetail({ runs }) {
   const [open, setOpen] = useState(false);
@@ -558,6 +599,14 @@ export default function Market({ marketFilter = 'korea' }) {
                     {analysis.gemini?.crossMarketInsight || analysis.groq?.crossMarketInsight}
                   </p>
                 </div>
+              )}
+
+              {/* ── 한국 주가 데이터 반영 리뷰 ── */}
+              {marketFilter === 'korea' && (
+                <KoreaStockTrendInsightPanel
+                  gemini={analysis.gemini}
+                  groq={analysis.groq}
+                />
               )}
 
               {/* ── 종합 결과 ── */}
