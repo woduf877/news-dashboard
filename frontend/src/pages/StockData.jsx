@@ -65,23 +65,27 @@ function RatioTooltip({ active, payload, label }) {
 
 // ─── 데이터 없음 상태 ────────────────────────────────────
 
-function EmptyState({ market }) {
+function EmptyState({ market, onCollect, collecting }) {
   return (
     <div className="flex flex-col items-center justify-center py-24 gap-4 text-center">
-      <span className="text-5xl">📭</span>
+      <span className="text-5xl">{collecting ? '⏳' : '📭'}</span>
       <p className="text-lg font-bold text-gray-700 dark:text-gray-200">
-        {market} 수집 데이터가 없습니다
+        {collecting ? '수집 중…' : `${market} 수집 데이터가 없습니다`}
       </p>
       <p className="text-sm text-gray-400 max-w-sm leading-relaxed">
-        매일 <strong>18:30 KST (월~금)</strong> NXT 종료 후 자동 수집됩니다.<br />
-        수동 수집은 아래 버튼을 눌러 즉시 실행할 수 있습니다.
+        {collecting
+          ? 'KRX에서 데이터를 수집하고 있습니다. 완료되면 자동으로 표시됩니다.'
+          : <>매일 <strong>18:30 KST (월~금)</strong> NXT 종료 후 자동 수집됩니다.<br />수동 수집은 아래 버튼을 눌러 즉시 실행할 수 있습니다.</>
+        }
       </p>
-      <button
-        onClick={() => fetch('/api/stocks/collect', { method: 'POST' }).then(() => window.location.reload())}
-        className="px-5 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 transition-colors"
-      >
-        지금 수집 실행
-      </button>
+      {!collecting && (
+        <button
+          onClick={onCollect}
+          className="px-5 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 transition-colors"
+        >
+          지금 수집 실행
+        </button>
+      )}
     </div>
   );
 }
@@ -137,12 +141,20 @@ export default function StockData() {
     loadStockSeries(stock.ticker);
   };
 
-  // 수동 수집
+  // 수동 수집 (백그라운드 실행 후 폴링)
   const handleCollect = async () => {
     setCollecting(true);
     try {
       await fetch('/api/stocks/collect', { method: 'POST' });
-      await loadMarket(market);
+      // 최대 5분간 10초마다 데이터 확인
+      for (let i = 0; i < 30; i++) {
+        await new Promise(r => setTimeout(r, 10_000));
+        const res = await fetch(`/api/stocks/summary?market=${market}`).then(r => r.json());
+        if (res.data?.length > 0) {
+          await loadMarket(market);
+          return;
+        }
+      }
     } finally {
       setCollecting(false);
     }
@@ -208,7 +220,7 @@ export default function StockData() {
           <p className="text-sm text-gray-400 animate-pulse">데이터 로딩 중…</p>
         </div>
       ) : summary.length === 0 ? (
-        <EmptyState market={market} />
+        <EmptyState market={market} onCollect={handleCollect} collecting={collecting} />
       ) : (
         <>
           {/* 시장 전체 차트 */}

@@ -26,6 +26,24 @@ const KRX_HEADERS = {
 // ─── 수집 기준일 ─────────────────────────────────────────
 // NXT 종료 18:30 KST 이전이면 전(영업)일 데이터를 대상으로 함
 
+// 한국 증시 공휴일 (연도별 MMDD)
+const KRX_HOLIDAYS = new Set([
+  '0101', // 신정
+  '0301', // 삼일절
+  '0505', // 어린이날
+  '0606', // 현충일
+  '0815', // 광복절
+  '1003', // 개천절
+  '1009', // 한글날
+  '1225', // 성탄절
+  // 근로자의날(0501)은 KRX 거래 가능이므로 제외
+]);
+
+function isHoliday(kst) {
+  const mmdd = String(kst.getUTCMonth() + 1).padStart(2, '0') + String(kst.getUTCDate()).padStart(2, '0');
+  return KRX_HOLIDAYS.has(mmdd);
+}
+
 function getCollectionDate() {
   const now    = new Date();
   const kst    = new Date(now.getTime() + 9 * 3_600_000);
@@ -36,8 +54,8 @@ function getCollectionDate() {
   if (hour < 18 || (hour === 18 && minute < 30)) {
     kst.setUTCDate(kst.getUTCDate() - 1);
   }
-  // 주말이면 직전 금요일로
-  while ([0, 6].includes(kst.getUTCDay())) {
+  // 주말 또는 공휴일이면 직전 영업일로
+  while ([0, 6].includes(kst.getUTCDay()) || isHoliday(kst)) {
     kst.setUTCDate(kst.getUTCDate() - 1);
   }
 

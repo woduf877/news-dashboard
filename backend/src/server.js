@@ -158,14 +158,6 @@ app.get('/api/market/hourly', (req, res) => {
   res.json({ ok: true, data: rows, window });
 });
 
-// React 라우팅 폴백 (SPA) — API 라우트 이후에 위치해야 함
-app.get('*', (req, res) => {
-  const index = path.join(STATIC_DIR, 'index.html');
-  res.sendFile(index, (err) => {
-    if (err) res.status(404).json({ error: 'Not found' });
-  });
-});
-
 // ─── 다음 크롤 예정 시각 계산 ─────────────────────────
 
 function getNextCrawlTimes(now) {
@@ -228,6 +220,14 @@ app.get('/api/stocks/diagnose', async (req, res) => {
   } catch (e) {
     res.status(500).json({ ok: false, date, error: e.message });
   }
+});
+
+// React 라우팅 폴백 (SPA) — 반드시 모든 API 라우트 이후에 위치
+app.get('*', (req, res) => {
+  const index = path.join(STATIC_DIR, 'index.html');
+  res.sendFile(index, (err) => {
+    if (err) res.status(404).json({ error: 'Not found' });
+  });
 });
 
 // ─── 서버 시작 ───────────────────────────────────────
