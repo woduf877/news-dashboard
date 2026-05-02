@@ -349,8 +349,26 @@ function saveStockDays(rows) {
 function cleanOldStockDays(keepDays = 14) {
   const result = db.prepare(`
     DELETE FROM stock_daily
-    WHERE trade_date < replace(date('now', '-' || ? || ' days'), '-', '')
+    WHERE trade_date NOT IN (
+      SELECT trade_date FROM (
+        SELECT DISTINCT trade_date
+        FROM stock_daily
+        ORDER BY trade_date DESC
+        LIMIT ?
+      )
+    )
   `).run(keepDays);
+  return result.changes;
+}
+
+function deleteStockDaysOutsideDates(market, dates) {
+  if (!dates.length) return 0;
+  const placeholders = dates.map(() => '?').join(',');
+  const result = db.prepare(`
+    DELETE FROM stock_daily
+    WHERE market = ?
+      AND trade_date NOT IN (${placeholders})
+  `).run(market, ...dates);
   return result.changes;
 }
 
@@ -581,6 +599,7 @@ module.exports = {
   keywordStatsEmpty,
   saveStockDays,
   cleanOldStockDays,
+  deleteStockDaysOutsideDates,
   getStockDates,
   getStockSummary,
   getStockTimeSeries,
