@@ -5,3 +5,6 @@ backend/data/
 backend/public/
 logs/
 *.db
+.env
+backend/.env
+.claude/

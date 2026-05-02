@@ -22,9 +22,9 @@ const {
   getStockTimeSeries,
   getMarketDailySeries,
 } = require('./db');
-const { collectStockData, getCollectionDate, krxDiagnose } = require('./stockCollector');
+const { collectStockData, getCollectionDate, kisDiagnose } = require('./stockCollector');
 const { extractFromArticles, computeMarketKeywords, getMarketWindow } = require('./keywords');
-const { runCrawl, NEWS_SOURCES, KOREA_MARKET_SOURCES } = require('./crawler');
+const { runCrawl, NEWS_SOURCES, KOREA_MARKET_SOURCES, US_MARKET_SOURCES } = require('./crawler');
 const { runMarketAnalysis } = require('./marketAnalyzer');
 const { isConfigured } = require('./aiAgent');
 const { startScheduler } = require('./scheduler');
@@ -77,7 +77,7 @@ app.get('/api/status', (req, res) => {
     data: {
       lastCrawlAt: last?.finished_at || null,
       nextCrawlAt: nextTimes,
-      sources: NEWS_SOURCES.length + KOREA_MARKET_SOURCES.length,
+      sources: NEWS_SOURCES.length + KOREA_MARKET_SOURCES.length + US_MARKET_SOURCES.length,
     },
   });
 });
@@ -211,14 +211,13 @@ app.post('/api/stocks/collect', (req, res) => {
   collectStockData().catch(e => console.error('[api] 주가 수집 오류:', e.message));
 });
 
-// KRX API 진단 (날짜·필드명 확인용)
+// KIS API 진단 (토큰·필드명 확인용)
 app.get('/api/stocks/diagnose', async (req, res) => {
-  const date = getCollectionDate();
   try {
-    const result = await krxDiagnose(date);
-    res.json({ ok: true, date, ...result });
+    const result = await kisDiagnose();
+    res.json({ ok: true, ...result });
   } catch (e) {
-    res.status(500).json({ ok: false, date, error: e.message });
+    res.status(500).json({ ok: false, error: e.message });
   }
 });
 
