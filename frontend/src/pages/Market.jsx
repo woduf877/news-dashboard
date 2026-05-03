@@ -420,15 +420,33 @@ const MARKET_CFG = {
   us:    { markets: ['NYSE', 'NASDAQ'],  title: '미국 증시 AI 듀얼 분석', flag: '🇺🇸' },
 };
 
+const PENDING_STALE_MS = 30 * 60 * 1000;
+
+function parseDbTime(value) {
+  if (!value) return 0;
+  const text = String(value);
+  const normalized = text.includes('T') ? text : `${text.replace(' ', 'T')}Z`;
+  const time = Date.parse(normalized);
+  return Number.isNaN(time) ? 0 : time;
+}
+
+function isFreshPendingStatus(status) {
+  if (status?.status !== 'pending') return false;
+  const startedAt = parseDbTime(status.analyzed_at);
+  return !startedAt || Date.now() - startedAt <= PENDING_STALE_MS;
+}
+
 function filterByMarket(result, filter) {
   if (!result || !filter) return result;
-  const { markets } = MARKET_CFG[filter];
+  const markets = MARKET_CFG[filter]?.markets;
+  if (!markets) return result;
   return { ...result, stocks: (result.stocks || []).filter(s => markets.includes(s.market)) };
 }
 
 function filterSummaryByMarket(summary, filter) {
   if (!summary || !filter) return summary;
-  const { markets } = MARKET_CFG[filter];
+  const markets = MARKET_CFG[filter]?.markets;
+  if (!markets) return summary;
   return { ...summary, stocks: (summary.stocks || []).filter(s => markets.includes(s.market)) };
 }
 
@@ -449,7 +467,7 @@ export default function Market({ marketFilter = 'korea' }) {
       ]);
       setData(res.data || null);
       setHourly(hrRes.data || []);
-      if (res.data?.status?.status === 'pending') {
+      if (isFreshPendingStatus(res.data?.status)) {
         pollRef.current = setTimeout(fetchData, 2000);
       } else {
         setAnalyzing(false);
@@ -472,7 +490,7 @@ export default function Market({ marketFilter = 'korea' }) {
 
   const analysis     = data?.analysis;
   const status       = data?.status;
-  const isPending    = status?.status === 'pending';
+  const isPending    = isFreshPendingStatus(status);
   const isError      = status?.status === 'error';
   const aiConfigured = data?.aiConfigured;
   const cfg          = MARKET_CFG[marketFilter];

@@ -18,13 +18,13 @@ export default function Header({ status, dark, onToggleDark, onCrawl, crawling }
       <div className="max-w-screen-xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
         {/* 로고 */}
         <div className="flex items-center gap-3 shrink-0">
-          <span className="text-2xl">📰</span>
+          <span className="text-2xl">📈</span>
           <div>
             <h1 className="text-base font-bold leading-none text-gray-900 dark:text-white">
-              글로벌 뉴스
+              마켓 대시보드
             </h1>
             <p className="text-xs text-gray-400 dark:text-gray-500 leading-none mt-0.5">
-              World News Dashboard
+              Stock & Market Intelligence
             </p>
           </div>
         </div>
@@ -66,7 +66,7 @@ export default function Header({ status, dark, onToggleDark, onCrawl, crawling }
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                     d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                 </svg>
-                지금 수집
+                뉴스 수집
               </>
             )}
           </button>

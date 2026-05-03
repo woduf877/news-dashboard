@@ -7,6 +7,7 @@ if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
 const db = new Database(path.join(DATA_DIR, 'news.db'));
 const STOCK_TARGET_COUNT = 150;
+const STOCK_HISTORY_DAYS = 14;
 
 // WAL 모드로 성능 향상
 db.pragma('journal_mode = WAL');
@@ -37,17 +38,6 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_articles_category  ON articles(category);
   CREATE INDEX IF NOT EXISTS idx_articles_pub_date  ON articles(pub_date DESC);
   CREATE INDEX IF NOT EXISTS idx_articles_crawl_id  ON articles(crawl_id);
-
-  CREATE TABLE IF NOT EXISTS keyword_stats (
-    keyword   TEXT NOT NULL,
-    category  TEXT NOT NULL DEFAULT 'all',
-    date      TEXT NOT NULL,
-    count     INTEGER DEFAULT 0,
-    PRIMARY KEY (keyword, category, date)
-  );
-
-  CREATE INDEX IF NOT EXISTS idx_kw_date     ON keyword_stats(date DESC);
-  CREATE INDEX IF NOT EXISTS idx_kw_category ON keyword_stats(category);
 
   CREATE TABLE IF NOT EXISTS stock_daily (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -160,16 +150,6 @@ function getArticles({ category, limit = 60, offset = 0, date } = {}) {
   return db.prepare(query).all(...params);
 }
 
-// 카테고리별 기사 수
-function getCategoryCounts() {
-  return db.prepare(`
-    SELECT category, COUNT(*) as count
-    FROM articles
-    GROUP BY category
-    ORDER BY count DESC
-  `).all();
-}
-
 // 최근 크롤 로그
 function getCrawlLogs(limit = 10) {
   return db.prepare(`
@@ -193,147 +173,6 @@ function cleanOldArticles() {
     WHERE created_at < datetime('now', '-7 days')
   `).run();
   return result.changes;
-}
-
-// ─── 키워드 분석 ──────────────────────────────────────
-
-// 크롤 결과에서 추출한 키워드를 upsert (count 누적)
-function upsertKeywords(extracted) {
-  const upsert = db.prepare(`
-    INSERT INTO keyword_stats (keyword, category, date, count)
-    VALUES (?, ?, ?, ?)
-    ON CONFLICT(keyword, category, date)
-    DO UPDATE SET count = count + excluded.count
-  `);
-  const run = db.transaction((data) => {
-    for (const [date, cats] of Object.entries(data)) {
-      for (const [category, freqs] of Object.entries(cats)) {
-        for (const [keyword, count] of Object.entries(freqs)) {
-          upsert.run(keyword, category, date, count);
-        }
-      }
-    }
-  });
-  run(extracted);
-}
-
-// 워드 클라우드: 기간 내 키워드 총합 top N
-function getWordCloud({ category = 'all', days = 30, limit = 80 } = {}) {
-  return db.prepare(`
-    SELECT keyword, SUM(count) as total
-    FROM keyword_stats
-    WHERE category = ?
-      AND date >= date('now', ? || ' days')
-    GROUP BY keyword
-    ORDER BY total DESC
-    LIMIT ?
-  `).all(category, `-${days}`, limit);
-}
-
-// 히트맵 그리드: top N 키워드 × 최근 N일 일별 count
-function getHeatmapData({ category = 'all', days = 14, topN = 20 } = {}) {
-  // top 키워드 먼저 추출
-  const topKeywords = db.prepare(`
-    SELECT keyword, SUM(count) as total
-    FROM keyword_stats
-    WHERE category = ?
-      AND date >= date('now', ? || ' days')
-    GROUP BY keyword
-    ORDER BY total DESC
-    LIMIT ?
-  `).all(category, `-${days}`, topN).map(r => r.keyword);
-
-  if (!topKeywords.length) return { keywords: [], dates: [], matrix: {} };
-
-  // 날짜 목록 (최근 N일)
-  const dates = db.prepare(`
-    SELECT DISTINCT date
-    FROM keyword_stats
-    WHERE date >= date('now', ? || ' days')
-    ORDER BY date ASC
-  `).all(`-${days}`).map(r => r.date);
-
-  // keyword × date count
-  const placeholders = topKeywords.map(() => '?').join(',');
-  const rows = db.prepare(`
-    SELECT keyword, date, count
-    FROM keyword_stats
-    WHERE category = ?
-      AND keyword IN (${placeholders})
-      AND date >= date('now', ? || ' days')
-  `).all(category, ...topKeywords, `-${days}`);
-
-  const matrix = {};
-  for (const kw of topKeywords) matrix[kw] = {};
-  for (const row of rows) matrix[row.keyword][row.date] = row.count;
-
-  return { keywords: topKeywords, dates, matrix };
-}
-
-// TOP 10 키워드 (기간별)
-function getTopKeywords({ category = 'all', period = 'daily' } = {}) {
-  const daysMap = { daily: 1, weekly: 7, monthly: 30 };
-  const days = daysMap[period] || 1;
-
-  return db.prepare(`
-    SELECT keyword, SUM(count) as total
-    FROM keyword_stats
-    WHERE category = ?
-      AND date >= date('now', ? || ' days')
-    GROUP BY keyword
-    ORDER BY total DESC
-    LIMIT 10
-  `).all(category, `-${days}`);
-}
-
-// 트렌드: 상위 키워드들의 일별 추이
-function getTrendData({ category = 'all', days = 30, topN = 8 } = {}) {
-  const topKeywords = db.prepare(`
-    SELECT keyword
-    FROM keyword_stats
-    WHERE category = ?
-      AND date >= date('now', ? || ' days')
-    GROUP BY keyword
-    ORDER BY SUM(count) DESC
-    LIMIT ?
-  `).all(category, `-${days}`, topN).map(r => r.keyword);
-
-  if (!topKeywords.length) return { keywords: [], dates: [], series: {} };
-
-  const dates = db.prepare(`
-    SELECT DISTINCT date FROM keyword_stats
-    WHERE date >= date('now', ? || ' days')
-    ORDER BY date ASC
-  `).all(`-${days}`).map(r => r.date);
-
-  const placeholders = topKeywords.map(() => '?').join(',');
-  const rows = db.prepare(`
-    SELECT keyword, date, SUM(count) as count
-    FROM keyword_stats
-    WHERE category = ?
-      AND keyword IN (${placeholders})
-      AND date >= date('now', ? || ' days')
-    GROUP BY keyword, date
-  `).all(category, ...topKeywords, `-${days}`);
-
-  const series = {};
-  for (const kw of topKeywords) series[kw] = {};
-  for (const row of rows) series[row.keyword][row.date] = row.count;
-
-  return { keywords: topKeywords, dates, series };
-}
-
-// 기존 기사로 키워드 재계산 (초기화 용)
-function getAllArticlesForKeywords() {
-  return db.prepare(`
-    SELECT title, description, category, pub_date
-    FROM articles
-    WHERE pub_date IS NOT NULL
-  `).all();
-}
-
-function keywordStatsEmpty() {
-  return db.prepare(`SELECT COUNT(*) as cnt FROM keyword_stats`).get().cnt === 0;
 }
 
 // ─── 주가 데이터 저장/조회 ───────────────────────────
@@ -370,7 +209,24 @@ function saveStockDays(rows) {
   run(rows);
 }
 
-function cleanOldStockDays(keepDays = 14) {
+function cleanOldStockDays(keepDays = 14, market = null) {
+  if (market) {
+    const result = db.prepare(`
+      DELETE FROM stock_daily
+      WHERE market = ?
+        AND trade_date NOT IN (
+          SELECT trade_date FROM (
+            SELECT DISTINCT trade_date
+            FROM stock_daily
+            WHERE market = ?
+            ORDER BY trade_date DESC
+            LIMIT ?
+          )
+        )
+    `).run(market, market, keepDays);
+    return result.changes;
+  }
+
   const result = db.prepare(`
     DELETE FROM stock_daily
     WHERE trade_date NOT IN (
@@ -447,6 +303,14 @@ function getStockSummary(market) {
   if (!topStocks.length) return [];
   const tickers = topStocks.map(r => r.ticker);
   const placeholders = tickers.map(() => '?').join(',');
+  const dateRows = db.prepare(`
+    SELECT DISTINCT trade_date
+    FROM stock_daily
+    WHERE market = ?
+    ORDER BY trade_date DESC
+    LIMIT ?
+  `).all(market, STOCK_HISTORY_DAYS).map(r => r.trade_date);
+  const datePlaceholders = dateRows.map(() => '?').join(',');
 
   // 14일 누적 데이터
   const rows = db.prepare(`
@@ -459,9 +323,11 @@ function getStockSummary(market) {
       SUM(fund_buy - fund_sell) AS cum_fund_net,
       COUNT(DISTINCT trade_date)                            AS day_count
     FROM stock_daily
-    WHERE market = ? AND ticker IN (${placeholders})
+    WHERE market = ?
+      AND ticker IN (${placeholders})
+      AND trade_date IN (${datePlaceholders})
     GROUP BY ticker
-  `).all(latest, latest, market, ...tickers);
+  `).all(latest, latest, market, ...tickers, ...dateRows);
 
   // 최신일 종목명 조인
   const nameMap = Object.fromEntries(topStocks.map(r => [r.ticker, r.name]));
@@ -668,17 +534,9 @@ module.exports = {
   finishCrawl,
   saveArticles,
   getArticles,
-  getCategoryCounts,
   getCrawlLogs,
   getLastCrawlTime,
   cleanOldArticles,
-  upsertKeywords,
-  getWordCloud,
-  getHeatmapData,
-  getTopKeywords,
-  getTrendData,
-  getAllArticlesForKeywords,
-  keywordStatsEmpty,
   saveStockDays,
   cleanOldStockDays,
   deleteStockDaysOutsideDates,

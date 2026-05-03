@@ -5,7 +5,7 @@
     "dev:backend":  "cd backend && npm run dev",
     "dev:frontend": "cd frontend && npm run dev",
     "build":        "cd frontend && npm run build",
-    "start":        "cd backend && npm start",
+    "start":        "cd backend && PORT=3001 npm start",
     "install:all":  "cd backend && npm install && cd ../frontend && npm install"
   }
 }

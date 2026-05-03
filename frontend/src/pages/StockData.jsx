@@ -178,7 +178,7 @@ export default function StockData() {
       for (let i = 0; i < 180; i++) {
         await new Promise(r => setTimeout(r, 5000));
         const status = await fetchCollectStatus();
-        if (!status?.running) {
+        if (status && !status.running) {
           await loadMarket(market);
           return;
         }

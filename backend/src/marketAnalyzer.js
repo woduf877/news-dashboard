@@ -7,7 +7,7 @@ const {
   saveAnalysisResult,
   saveAnalysisError,
 } = require('./db');
-const { getMarketWindow } = require('./keywords');
+const { getMarketWindow } = require('./marketWindow');
 
 function fmtPct(ratio, digits = 3) {
   if (ratio == null || Number.isNaN(ratio)) return 'n/a';

@@ -15,11 +15,13 @@ function startScheduler() {
       expr,
       async () => {
         console.log(`[scheduler] ${label} 스케줄 실행`);
-        await runCrawl();
-        // 크롤 완료 후 AI 증시 분석 실행
-        await runMarketAnalysis().catch(e =>
-          console.error('[scheduler] AI 분석 오류:', e.message)
-        );
+        try {
+          await runCrawl();
+          // 크롤 완료 후 AI 증시 분석 실행
+          await runMarketAnalysis();
+        } catch (e) {
+          console.error('[scheduler] 뉴스/AI 스케줄 오류:', e.message);
+        }
       },
       { timezone: 'Asia/Seoul' }
     );

@@ -538,7 +538,9 @@ async function collectStockDataInternal() {
     }
   }
 
-  const deleted = cleanOldStockDays(14);
+  const deleted = ['KOSPI', 'KOSDAQ'].reduce((sum, market) => (
+    sum + cleanOldStockDays(14, market)
+  ), 0);
   console.log(`[kis] 완료 — KOSPI ${summary.kospi}, KOSDAQ ${summary.kosdaq}, 삭제 ${deleted}건`);
   return summary;
 }

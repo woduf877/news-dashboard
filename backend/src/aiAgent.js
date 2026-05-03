@@ -130,6 +130,14 @@ async function runMultiple(articles, count = 3, promptContext = {}) {
     }
     if (i < count - 1) await new Promise(r => setTimeout(r, 3000));
   }
+  const usableRuns = runs.filter(r => r.geminiResult || r.groqResult);
+  if (!usableRuns.length) {
+    const reasons = runs
+      .map((r, i) => `${i + 1}회: ${r.errors?.fatal || 'unknown'}`)
+      .join(' | ');
+    throw new Error(`AI 분석 전체 실패 — ${reasons}`);
+  }
+
   const summary = summarizeRuns(runs);
   return { runs, summary };
 }
