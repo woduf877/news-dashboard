@@ -119,7 +119,7 @@ function daysAgo(days) {
 // ─── 수집 기준일 ─────────────────────────────────────────
 
 const KRX_HOLIDAYS = new Set([
-  '0101','0301','0505','0606','0815','1003','1009','1225',
+  '0101','0301','0501','0505','0606','0815','1003','1009','1225',
 ]);
 
 function isHoliday(kst) {
@@ -261,9 +261,10 @@ async function fetchTopStocksByPrice(stocks, market, token, batchSize = 5, delay
 }
 
 // ─── 3단계: 일별 데이터 수집 ───────────────────────────
-// tr_id: FHKST01010900 — 주식현재가 투자자
-// orgn_ntby_tr_pbmn: 기관 순매수 거래대금 (원, 양수=순매수)
-// frgn_ntby_tr_pbmn: 외국인 순매수 거래대금 (원, 양수=순매수)
+// tr_id: FHPTJ04160001 — 종목별 투자자매매동향(일별)
+// orgn_ntby_tr_pbmn: 기관계 순매수 거래대금 (백만원)
+// fund_ntby_tr_pbmn: 기금/연기금 순매수 거래대금 (백만원)
+// frgn_ntby_tr_pbmn: 외국인 순매수 거래대금 (백만원)
 
 async function fetchDailyPrices(ticker, token, fromDate, toDate) {
   let lastError;
@@ -300,30 +301,97 @@ async function fetchDailyPrices(ticker, token, fromDate, toDate) {
   throw lastError;
 }
 
-async function fetchInvestorHistory(ticker, token) {
+function netParts(net) {
+  return {
+    buy:  Math.max(0, net),
+    sell: Math.max(0, -net),
+  };
+}
+
+function investorAmountParts(row, buyKey, sellKey, netKey) {
+  const hasGross = row[buyKey] != null || row[sellKey] != null;
+  const buy = toNum(row[buyKey]) * 1_000_000;
+  const sell = toNum(row[sellKey]) * 1_000_000;
+
+  if (hasGross) return { buy, sell, hasGross: true };
+  return { ...netParts(toNum(row[netKey]) * 1_000_000), hasGross: false };
+}
+
+function extractInvestorRows(data) {
+  return ['output2', 'output1', 'output']
+    .flatMap(key => {
+      const value = data[key];
+      if (!value) return [];
+      return Array.isArray(value) ? value : [value];
+    })
+    .filter(row => row?.stck_bsop_date);
+}
+
+async function fetchInvestorTradeByStockDaily(ticker, token, date) {
+  const { data } = await axios.get(
+    `${KIS_BASE}/uapi/domestic-stock/v1/quotations/investor-trade-by-stock-daily`,
+    {
+      headers: kisHeaders(token, 'FHPTJ04160001'),
+      params: {
+        FID_COND_MRKT_DIV_CODE: 'J',
+        FID_INPUT_ISCD:         ticker,
+        FID_INPUT_DATE_1:       date,
+        FID_ORG_ADJ_PRC:        '',
+        FID_ETC_CLS_CODE:       '',
+      },
+      timeout: 10_000,
+    }
+  );
+  if (data.rt_cd !== '0') throw new Error(data.msg1);
+  return extractInvestorRows(data);
+}
+
+async function fetchInvestorHistory(ticker, token, missingDates) {
   let lastError;
+  const wanted = new Set(missingDates);
 
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      const { data } = await axios.get(
-        `${KIS_BASE}/uapi/domestic-stock/v1/quotations/inquire-investor`,
-        {
-          headers: kisHeaders(token, 'FHKST01010900'),
-          params:  { fid_cond_mrkt_div_code: 'J', fid_input_iscd: ticker },
-          timeout: 10_000,
-        }
-      );
-      if (data.rt_cd !== '0') throw new Error(data.msg1);
+      const rowsByDate = new Map();
+      const seedDate = missingDates[0];
+      const seedRows = await fetchInvestorTradeByStockDaily(ticker, token, seedDate);
 
-      return Object.fromEntries((data.output || []).map(row => {
-        // orgn_ntby_tr_pbmn / frgn_ntby_tr_pbmn 단위: 백만원 → 원 변환
-        const instNet = toNum(row.orgn_ntby_tr_pbmn) * 1_000_000;
-        const forNet  = toNum(row.frgn_ntby_tr_pbmn) * 1_000_000;
+      for (const row of seedRows) {
+        if (wanted.has(row.stck_bsop_date)) rowsByDate.set(row.stck_bsop_date, row);
+      }
+
+      const stillMissing = missingDates.filter(date => !rowsByDate.has(date));
+      for (const date of stillMissing) {
+        const rows = await fetchInvestorTradeByStockDaily(ticker, token, date);
+        const row = rows.find(r => r.stck_bsop_date === date) || rows[0];
+        if (row?.stck_bsop_date) rowsByDate.set(row.stck_bsop_date, row);
+        await sleep(650);
+      }
+
+      return Object.fromEntries(Array.from(rowsByDate.values()).map(row => {
+        const orgnNetTotal = toNum(row.orgn_ntby_tr_pbmn) * 1_000_000;
+        const fundNet      = toNum(row.fund_ntby_tr_pbmn) * 1_000_000;
+        const instNet      = orgnNetTotal - fundNet;
+        const fallbackInst = netParts(instNet);
+
+        const foreign = investorAmountParts(row, 'frgn_shnu_tr_pbmn', 'frgn_seln_tr_pbmn', 'frgn_ntby_tr_pbmn');
+        const fund = investorAmountParts(row, 'fund_shnu_tr_pbmn', 'fund_seln_tr_pbmn', 'fund_ntby_tr_pbmn');
+        const orgn = investorAmountParts(row, 'orgn_shnu_tr_pbmn', 'orgn_seln_tr_pbmn', 'orgn_ntby_tr_pbmn');
+        const hasInstitutionBreakdown = orgn.hasGross && fund.hasGross;
+        const inst = hasInstitutionBreakdown
+          ? {
+              buy:  Math.max(0, orgn.buy - fund.buy),
+              sell: Math.max(0, orgn.sell - fund.sell),
+            }
+          : fallbackInst;
+
         return [row.stck_bsop_date, {
-          instBuy:  Math.max(0,  instNet),
-          instSell: Math.max(0, -instNet),
-          forBuy:   Math.max(0,  forNet),
-          forSell:  Math.max(0, -forNet),
+          instBuy:  inst.buy,
+          instSell: inst.sell,
+          forBuy:   foreign.buy,
+          forSell:  foreign.sell,
+          fundBuy:  fund.buy,
+          fundSell: fund.sell,
         }];
       }));
     } catch (e) {
@@ -340,7 +408,7 @@ async function getRecentTradingDates(ticker, token) {
   return Object.keys(prices).sort().reverse().slice(0, HISTORY_DAYS);
 }
 
-async function enrichMissingHistory(topStocks, market, token, missingDates, batchSize = 3, delayMs = 700) {
+async function enrichMissingHistory(topStocks, market, token, missingDates, batchSize = 1, delayMs = 700) {
   const results = [];
   const wanted = new Set(missingDates);
   const fromDate = missingDates[missingDates.length - 1];
@@ -351,10 +419,9 @@ async function enrichMissingHistory(topStocks, market, token, missingDates, batc
     const rows = await Promise.all(
       batch.map(async s => {
         try {
-          const [prices, investors] = await Promise.all([
-            fetchDailyPrices(s.ticker, token, fromDate, toDate),
-            fetchInvestorHistory(s.ticker, token),
-          ]);
+          const prices = await fetchDailyPrices(s.ticker, token, fromDate, toDate);
+          await sleep(650);
+          const investors = await fetchInvestorHistory(s.ticker, token, missingDates);
           const shares = s.close > 0 ? s.cap / s.close : 0;
 
           return missingDates
@@ -373,6 +440,9 @@ async function enrichMissingHistory(topStocks, market, token, missingDates, batc
                 inst_sell:  inv.instSell || 0,
                 for_buy:    inv.forBuy   || 0,
                 for_sell:   inv.forSell  || 0,
+                fund_buy:   inv.fundBuy  || 0,
+                fund_sell:  inv.fundSell || 0,
+                investor_breakdown: 1,
               };
             });
         } catch (e) {
@@ -496,17 +566,33 @@ async function kisDiagnose() {
     result.samsungCap억원 = data.output?.hts_avls;
   } catch (e) { return { ...result, step: 'inquire-price', error: e.message }; }
 
+  await sleep(650);
+
+  try {
+    const dailyPrices = await fetchDailyPrices('005930', token, daysAgo(10), result.collectionDate);
+    result.latestTradingDate = Object.keys(dailyPrices).sort().reverse()[0] || result.collectionDate;
+  } catch (e) { return { ...result, step: 'inquire-daily-itemchartprice', error: e.message }; }
+
+  await sleep(650);
+
   try {
     const { data } = await axios.get(
-      `${KIS_BASE}/uapi/domestic-stock/v1/quotations/inquire-investor`,
-      { headers: kisHeaders(token, 'FHKST01010900'),
-        params:  { fid_cond_mrkt_div_code: 'J', fid_input_iscd: '005930' },
+      `${KIS_BASE}/uapi/domestic-stock/v1/quotations/investor-trade-by-stock-daily`,
+      { headers: kisHeaders(token, 'FHPTJ04160001'),
+        params:  {
+          FID_COND_MRKT_DIV_CODE: 'J',
+          FID_INPUT_ISCD: '005930',
+          FID_INPUT_DATE_1: result.latestTradingDate,
+          FID_ORG_ADJ_PRC: '',
+          FID_ETC_CLS_CODE: '',
+        },
         timeout: 10_000 }
     );
-    const row = (data.output || [])[0] || {};
+    const row = extractInvestorRows(data)[0] || {};
     result.instNetAmt = row.orgn_ntby_tr_pbmn;
+    result.fundNetAmt = row.fund_ntby_tr_pbmn;
     result.frgnNetAmt = row.frgn_ntby_tr_pbmn;
-  } catch (e) { return { ...result, step: 'inquire-investor', error: e.message }; }
+  } catch (e) { return { ...result, step: 'investor-trade-by-stock-daily', error: e.message }; }
 
   try {
     const stocks = await downloadStockTickers('KOSPI');

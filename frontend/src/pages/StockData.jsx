@@ -32,7 +32,7 @@ function RatioTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null;
   const p = payload[0];
   const d = p?.payload ?? {};
-  const numerator   = d.sumNet   ?? (d.instNet != null ? d.instNet + d.forNet : null);
+  const numerator   = d.sumNet   ?? (d.instNet != null ? d.instNet + d.forNet + (d.fundNet || 0) : null);
   const denominator = d.sumCap   ?? d.cap ?? null;
 
   return (
@@ -43,11 +43,12 @@ function RatioTooltip({ active, payload, label }) {
       </p>
       {numerator != null && (
         <div className="border-t border-gray-100 dark:border-gray-800 pt-2 space-y-1">
-          <p className="text-gray-400 font-semibold">분자 (기관+외인 순매수)</p>
+          <p className="text-gray-400 font-semibold">분자 (외국인+기관+연기금 순매수)</p>
           {d.instNet != null && (
             <>
-              <p className="text-gray-500">기관: <span className={d.instNet >= 0 ? 'text-red-500' : 'text-blue-500'}>{fmtAmt(d.instNet)}원</span></p>
               <p className="text-gray-500">외인: <span className={d.forNet  >= 0 ? 'text-red-500' : 'text-blue-500'}>{fmtAmt(d.forNet)}원</span></p>
+              <p className="text-gray-500">기관(연기금 제외): <span className={d.instNet >= 0 ? 'text-red-500' : 'text-blue-500'}>{fmtAmt(d.instNet)}원</span></p>
+              <p className="text-gray-500">연기금: <span className={(d.fundNet || 0) >= 0 ? 'text-red-500' : 'text-blue-500'}>{fmtAmt(d.fundNet || 0)}원</span></p>
             </>
           )}
           <p className="text-gray-600 font-medium">합계: <span className={numerator >= 0 ? 'text-red-500' : 'text-blue-500'}>{fmtAmt(numerator)}원</span></p>
@@ -213,7 +214,14 @@ export default function StockData() {
   const ranked = [...summary]
     .filter(s => !search.trim() || s.name.includes(search) || s.ticker.includes(search))
     .sort((a, b) => {
-      const key = sortBy === 'amount' ? 'cumNet' : 'cumRatio';
+      const keyMap = {
+        ratio: 'cumRatio',
+        amount: 'cumNet',
+        foreign: 'cumForNet',
+        institution: 'cumInstNet',
+        fund: 'cumFundNet',
+      };
+      const key = keyMap[sortBy] || 'cumRatio';
       return sortDir === 'asc' ? a[key] - b[key] : b[key] - a[key];
     });
 
@@ -223,6 +231,9 @@ export default function StockData() {
   const marketChartData = marketSeries.map(d => ({
     date:   fmtDate(d.trade_date),
     ratio:  d.ratio,
+    instNet: d.instNet,
+    forNet: d.forNet,
+    fundNet: d.fundNet,
     sumNet: d.sumNet,
     sumCap: d.sumCap,
   }));
@@ -232,6 +243,7 @@ export default function StockData() {
     ratio:   d.ratio,
     instNet: d.inst_net,
     forNet:  d.for_net,
+    fundNet: d.fund_net,
     cap:     d.cap,
   }));
 
@@ -295,7 +307,7 @@ export default function StockData() {
                 </p>
                 <div className="flex items-center gap-1.5 mt-1 flex-wrap">
                   <span className="px-2 py-0.5 rounded text-xs font-medium bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 border border-orange-200 dark:border-orange-800">
-                    분자: Σ기관순매수 + Σ외인순매수
+                    분자: Σ외국인순매수 + Σ기관순매수 + Σ연기금순매수
                   </span>
                   <span className="text-xs text-gray-300 dark:text-gray-600">÷</span>
                   <span className="px-2 py-0.5 rounded text-xs font-medium bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 border border-purple-200 dark:border-purple-800">
@@ -327,16 +339,19 @@ export default function StockData() {
             {/* 종목 목록 */}
             <div className="xl:col-span-2 bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 overflow-hidden flex flex-col">
               <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-800 space-y-2">
-                <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center justify-between gap-3 flex-wrap">
                   <p className="text-sm font-bold text-gray-700 dark:text-gray-200">
                     시총 TOP150 · 2주 누적 수급
                     <span className="text-xs font-normal text-gray-400 ml-2">{ranked.length}개</span>
                   </p>
-                  <div className="flex items-center gap-1 shrink-0">
+                  <div className="flex items-center gap-1 shrink-0 max-w-full overflow-x-auto">
                     <div className="flex rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
                       {[
                         { key: 'ratio',  label: '비율' },
-                        { key: 'amount', label: '거래대금' },
+                        { key: 'amount', label: '합계' },
+                        { key: 'foreign', label: '외국인' },
+                        { key: 'institution', label: '기관' },
+                        { key: 'fund',   label: '연기금' },
                       ].map(opt => (
                         <button
                           key={opt.key}
@@ -371,6 +386,9 @@ export default function StockData() {
                   const isSelected = displayStock?.ticker === s.ticker;
                   const pos  = s.cumRatio >= 0;
                   const amountPos = s.cumNet >= 0;
+                  const foreignPos = (s.cumForNet || 0) >= 0;
+                  const instPos = (s.cumInstNet || 0) >= 0;
+                  const fundPos = (s.cumFundNet || 0) >= 0;
                   const barW = Math.min(Math.abs(s.cumRatio) * 4000, 50);
                   return (
                     <div key={s.ticker} onClick={() => handleSelect(s)}
@@ -388,7 +406,14 @@ export default function StockData() {
                             {fmtRatio(s.cumRatio, 3)}
                           </p>
                           <p className={`text-[11px] font-semibold tabular-nums ${amountPos ? 'text-red-400' : 'text-blue-400'}`}>
-                            {fmtAmt(s.cumNet)}원
+                            합계 {fmtAmt(s.cumNet)}원
+                          </p>
+                          <p className="text-[10px] font-semibold tabular-nums">
+                            <span className={foreignPos ? 'text-red-400' : 'text-blue-400'}>외 {fmtAmt(s.cumForNet || 0)}</span>
+                            <span className="text-gray-300 dark:text-gray-600 mx-0.5">·</span>
+                            <span className={instPos ? 'text-red-400' : 'text-blue-400'}>기 {fmtAmt(s.cumInstNet || 0)}</span>
+                            <span className="text-gray-300 dark:text-gray-600 mx-0.5">·</span>
+                            <span className={fundPos ? 'text-emerald-500' : 'text-blue-400'}>연 {fmtAmt(s.cumFundNet || 0)}</span>
                           </p>
                         </div>
                       </div>
@@ -418,7 +443,7 @@ export default function StockData() {
                       <div className="text-right">
                         <p className="text-xs text-gray-400 mb-0.5">
                           2주 누적 수급 비율
-                          <span className="ml-1 text-[10px] text-orange-500">(분자: Σ14일순매수</span>
+                          <span className="ml-1 text-[10px] text-orange-500">(분자: Σ외국인+기관+연기금</span>
                           <span className="text-[10px] text-gray-400"> ÷ </span>
                           <span className="text-[10px] text-purple-500">분모: 최신시총)</span>
                         </p>
@@ -433,15 +458,20 @@ export default function StockData() {
                       <p className="text-xs font-semibold text-gray-500 dark:text-gray-400">
                         2주 누적 기준 ({displayStock.dayCount ?? '-'}거래일)
                       </p>
-                      <div className="grid grid-cols-3 gap-3">
+                      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                         <div className="bg-white dark:bg-gray-900 rounded-lg p-3 border border-orange-100 dark:border-orange-900/40">
                           <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400">분자</span>
-                          <p className="text-[10px] text-gray-400 mt-2 mb-0.5">Σ기관 순매수</p>
-                          <p className={`text-xs font-bold ${displayStock.cumInstNet >= 0 ? 'text-red-500' : 'text-blue-500'}`}>{fmtAmt(displayStock.cumInstNet)}원</p>
-                          <p className="text-[10px] text-gray-400 mt-1.5 mb-0.5">Σ외인 순매수</p>
+                          <p className="text-[10px] text-gray-400 mt-2 mb-0.5">Σ외국인 순매수</p>
                           <p className={`text-xs font-bold ${displayStock.cumForNet >= 0 ? 'text-red-500' : 'text-blue-500'}`}>{fmtAmt(displayStock.cumForNet)}원</p>
+                          <p className="text-[10px] text-gray-400 mt-1.5 mb-0.5">Σ기관 순매수(연기금 제외)</p>
+                          <p className={`text-xs font-bold ${displayStock.cumInstNet >= 0 ? 'text-red-500' : 'text-blue-500'}`}>{fmtAmt(displayStock.cumInstNet)}원</p>
+                        </div>
+                        <div className="bg-white dark:bg-gray-900 rounded-lg p-3 border border-emerald-100 dark:border-emerald-900/40">
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400">연기금</span>
+                          <p className="text-[10px] text-gray-400 mt-2 mb-0.5">Σ연기금 순매수</p>
+                          <p className={`text-xs font-bold ${(displayStock.cumFundNet || 0) >= 0 ? 'text-emerald-600' : 'text-blue-500'}`}>{fmtAmt(displayStock.cumFundNet || 0)}원</p>
                           <div className="border-t border-gray-100 dark:border-gray-700 mt-2 pt-1.5">
-                            <p className="text-[10px] text-gray-400">합산</p>
+                            <p className="text-[10px] text-gray-400">전체 합산</p>
                             <p className={`text-xs font-bold ${displayStock.cumNet >= 0 ? 'text-red-500' : 'text-blue-500'}`}>{fmtAmt(displayStock.cumNet)}원</p>
                           </div>
                         </div>
@@ -468,7 +498,7 @@ export default function StockData() {
                     <p className="text-sm font-bold text-gray-700 dark:text-gray-200 mb-1">14일 일별 수급 비율</p>
                     <div className="flex items-center gap-1.5 mb-4 flex-wrap">
                       <span className="px-2 py-0.5 rounded text-xs font-medium bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 border border-orange-200 dark:border-orange-800">
-                        분자: 기관순매수 + 외인순매수
+                        분자: 외국인순매수 + 기관순매수 + 연기금순매수
                       </span>
                       <span className="text-xs text-gray-300 dark:text-gray-600">÷</span>
                       <span className="px-2 py-0.5 rounded text-xs font-medium bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 border border-purple-200 dark:border-purple-800">

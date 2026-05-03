@@ -61,6 +61,9 @@ db.exec(`
     inst_sell   INTEGER DEFAULT 0,
     for_buy     INTEGER DEFAULT 0,
     for_sell    INTEGER DEFAULT 0,
+    fund_buy    INTEGER DEFAULT 0,
+    fund_sell   INTEGER DEFAULT 0,
+    investor_breakdown INTEGER DEFAULT 0,
     UNIQUE(ticker, trade_date)
   );
 
@@ -88,6 +91,14 @@ db.exec(`
 // 기존 DB에 컬럼이 없을 경우 마이그레이션
 for (const col of ['runs_json', 'summary_json']) {
   try { db.exec(`ALTER TABLE market_analysis ADD COLUMN ${col} TEXT`); } catch {}
+}
+
+for (const [col, type] of [
+  ['fund_buy', 'INTEGER DEFAULT 0'],
+  ['fund_sell', 'INTEGER DEFAULT 0'],
+  ['investor_breakdown', 'INTEGER DEFAULT 0'],
+]) {
+  try { db.exec(`ALTER TABLE stock_daily ADD COLUMN ${col} ${type}`); } catch {}
 }
 
 // 크롤 시작 기록
@@ -330,19 +341,31 @@ function keywordStatsEmpty() {
 function saveStockDays(rows) {
   const upsert = db.prepare(`
     INSERT INTO stock_daily
-      (ticker, name, market, trade_date, close, cap, inst_buy, inst_sell, for_buy, for_sell)
+      (ticker, name, market, trade_date, close, cap,
+       inst_buy, inst_sell, for_buy, for_sell, fund_buy, fund_sell, investor_breakdown)
     VALUES
-      (@ticker, @name, @market, @trade_date, @close, @cap, @inst_buy, @inst_sell, @for_buy, @for_sell)
+      (@ticker, @name, @market, @trade_date, @close, @cap,
+       @inst_buy, @inst_sell, @for_buy, @for_sell, @fund_buy, @fund_sell, @investor_breakdown)
     ON CONFLICT(ticker, trade_date) DO UPDATE SET
       close     = excluded.close,
       cap       = excluded.cap,
       inst_buy  = excluded.inst_buy,
       inst_sell = excluded.inst_sell,
       for_buy   = excluded.for_buy,
-      for_sell  = excluded.for_sell
+      for_sell  = excluded.for_sell,
+      fund_buy  = excluded.fund_buy,
+      fund_sell = excluded.fund_sell,
+      investor_breakdown = excluded.investor_breakdown
   `);
   const run = db.transaction(items => {
-    for (const r of items) upsert.run(r);
+    for (const r of items) {
+      upsert.run({
+        fund_buy: 0,
+        fund_sell: 0,
+        investor_breakdown: 0,
+        ...r,
+      });
+    }
   });
   run(rows);
 }
@@ -396,6 +419,7 @@ function getStockCoverageByDate(market, dates, tickers) {
     WHERE market = ?
       AND trade_date IN (${datePlaceholders})
       AND ticker IN (${tickerPlaceholders})
+      AND investor_breakdown = 1
     GROUP BY trade_date
   `).all(market, ...dates, ...tickers);
 
@@ -432,6 +456,7 @@ function getStockSummary(market) {
       MAX(CASE WHEN trade_date = ? THEN close ELSE 0 END)  AS latest_close,
       SUM(inst_buy - inst_sell) AS cum_inst_net,
       SUM(for_buy  - for_sell)  AS cum_for_net,
+      SUM(fund_buy - fund_sell) AS cum_fund_net,
       COUNT(DISTINCT trade_date)                            AS day_count
     FROM stock_daily
     WHERE market = ? AND ticker IN (${placeholders})
@@ -449,9 +474,10 @@ function getStockSummary(market) {
     latestClose:  r.latest_close,
     cumInstNet:   r.cum_inst_net,
     cumForNet:    r.cum_for_net,
-    cumNet:       r.cum_inst_net + r.cum_for_net,
+    cumFundNet:   r.cum_fund_net,
+    cumNet:       r.cum_inst_net + r.cum_for_net + r.cum_fund_net,
     cumRatio:     r.latest_cap > 0
-                    ? (r.cum_inst_net + r.cum_for_net) / r.latest_cap
+                    ? (r.cum_inst_net + r.cum_for_net + r.cum_fund_net) / r.latest_cap
                     : 0,
     dayCount:     r.day_count,
   })).sort((a, b) => b.latestCap - a.latestCap);
@@ -466,7 +492,11 @@ function getStockTimeSeries(ticker) {
       cap,
       inst_buy - inst_sell AS inst_net,
       for_buy  - for_sell  AS for_net,
-      CASE WHEN cap > 0 THEN CAST(inst_buy - inst_sell + for_buy - for_sell AS REAL) / cap ELSE 0 END AS ratio
+      fund_buy - fund_sell AS fund_net,
+      CASE
+        WHEN cap > 0 THEN CAST(inst_buy - inst_sell + for_buy - for_sell + fund_buy - fund_sell AS REAL) / cap
+        ELSE 0
+      END AS ratio
     FROM stock_daily
     WHERE ticker = ?
     ORDER BY trade_date ASC
@@ -489,7 +519,11 @@ function getStockRawRows(market) {
       for_buy,
       for_sell,
       for_buy - for_sell AS for_net,
-      inst_buy - inst_sell + for_buy - for_sell AS total_net
+      fund_buy,
+      fund_sell,
+      fund_buy - fund_sell AS fund_net,
+      inst_buy - inst_sell + for_buy - for_sell + fund_buy - fund_sell AS total_net,
+      investor_breakdown
     FROM stock_daily
     WHERE market = ?
     ORDER BY trade_date DESC, cap DESC, ticker ASC
@@ -512,14 +546,20 @@ function getMarketDailySeries(market) {
   return db.prepare(`
     SELECT
       trade_date,
-      SUM(inst_buy - inst_sell + for_buy - for_sell) AS sum_net,
-      SUM(cap)                                        AS sum_cap
+      SUM(inst_buy - inst_sell) AS inst_net,
+      SUM(for_buy - for_sell) AS for_net,
+      SUM(fund_buy - fund_sell) AS fund_net,
+      SUM(inst_buy - inst_sell + for_buy - for_sell + fund_buy - fund_sell) AS sum_net,
+      SUM(cap) AS sum_cap
     FROM stock_daily
     WHERE market = ? AND ticker IN (${ph})
     GROUP BY trade_date
     ORDER BY trade_date ASC
   `).all(market, ...topStocks).map(r => ({
     trade_date: r.trade_date,
+    instNet:    r.inst_net,
+    forNet:     r.for_net,
+    fundNet:    r.fund_net,
     sumNet:     r.sum_net,
     sumCap:     r.sum_cap,
     ratio:      r.sum_cap > 0 ? r.sum_net / r.sum_cap : 0,

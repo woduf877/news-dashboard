@@ -194,13 +194,17 @@ function stockRawRowsToCsv(rows) {
     ['name', '종목명'],
     ['close', '종가'],
     ['cap', '시가총액'],
-    ['inst_buy', '기관매수'],
-    ['inst_sell', '기관매도'],
-    ['inst_net', '기관순매수'],
+    ['inst_buy', '기관매수(연기금제외)'],
+    ['inst_sell', '기관매도(연기금제외)'],
+    ['inst_net', '기관순매수(연기금제외)'],
     ['for_buy', '외국인매수'],
     ['for_sell', '외국인매도'],
     ['for_net', '외국인순매수'],
-    ['total_net', '기관외국인순매수'],
+    ['fund_buy', '연기금매수'],
+    ['fund_sell', '연기금매도'],
+    ['fund_net', '연기금순매수'],
+    ['total_net', '외국인기관연기금순매수'],
+    ['investor_breakdown', '투자자분해수집여부'],
   ];
 
   const header = columns.map(([, label]) => csvCell(label)).join(',');
