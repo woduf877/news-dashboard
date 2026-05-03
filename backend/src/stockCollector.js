@@ -3,8 +3,8 @@
  *
  * 수집 흐름:
  *  1. KIS MST 파일 다운로드 → 일반주(ST) 전체 티커 추출
- *  2. inquire-price 배치 호출 → 시가총액(hts_avls) 기준 TOP 100 선정
- *  3. 최근 14거래일 중 DB에 없는 날짜만 일별 종가·투자자 수급 수집
+ *  2. inquire-price 배치 호출 → 시가총액(hts_avls) 기준 TOP 150 선정
+ *  3. 최근 14거래일 중 DB에 없거나 부족한 날짜만 일별 종가·투자자 수급 수집
  *  4. SQLite stock_daily 저장 (최근 14거래일 롤링)
  *
  * API: https://apiportal.koreainvestment.com/
@@ -19,6 +19,7 @@ const {
   cleanOldStockDays,
   deleteStockDaysOutsideDates,
   getStockDates,
+  getStockCoverageByDate,
 } = require('./db');
 
 const KIS_BASE   = 'https://openapi.koreainvestment.com:9443';
@@ -31,6 +32,8 @@ const MST_URLS = {
 };
 
 const HISTORY_DAYS = 14;
+const STOCK_TARGET_COUNT = 150;
+const PRICE_LOOKUP_MAX_ATTEMPTS = 3;
 const collectionStatus = {
   running: false,
   startedAt: null,
@@ -176,7 +179,7 @@ async function downloadStockTickers(market) {
   return stocks; // [{ ticker, name }]
 }
 
-// ─── 2단계: 전체 시가총액 조회 → TOP 100 선정 ────────────
+// ─── 2단계: 전체 시가총액 조회 → TOP 종목 선정 ────────────
 // tr_id: FHKST01010100 — 주식현재가 시세
 // hts_avls: 시가총액 (억원)  stck_prpr: 현재가 (원)
 
@@ -199,49 +202,62 @@ async function fetchPrice(ticker, token) {
 }
 
 // stocks: [{ ticker, name }] from downloadStockTickers
-async function fetchTop100ByPrice(stocks, market, token, batchSize = 5, delayMs = 500) {
-  const results = [];
-  const failed  = [];
+async function fetchTopStocksByPrice(stocks, market, token, batchSize = 5, delayMs = 500) {
+  const resultsByTicker = new Map();
+  let candidates = stocks;
 
-  for (let i = 0; i < stocks.length; i += batchSize) {
-    const batch = stocks.slice(i, i + batchSize);
-    const rows = await Promise.all(
-      batch.map(async ({ ticker, name }) => {
-        try {
-          const p = await fetchPrice(ticker, token);
-          return { ...p, name };
-        } catch (e) {
-          failed.push({ ticker, name });
-          return null;
-        }
-      })
-    );
-    results.push(...rows.filter(Boolean));
-    if (i + batchSize < stocks.length && i % 100 === 0) {
-      process.stdout.write(`\r[kis] ${market} 가격 조회: ${Math.min(i + batchSize, stocks.length)}/${stocks.length} (실패: ${failed.length})`);
+  for (let attempt = 1; attempt <= PRICE_LOOKUP_MAX_ATTEMPTS && candidates.length; attempt++) {
+    const failed = [];
+    console.log(`[kis] ${market} 가격 조회 ${attempt}/${PRICE_LOOKUP_MAX_ATTEMPTS}: ${candidates.length}종목`);
+
+    for (let i = 0; i < candidates.length; i += batchSize) {
+      const batch = candidates.slice(i, i + batchSize);
+      const rows = await Promise.all(
+        batch.map(async ({ ticker, name }) => {
+          if (resultsByTicker.has(ticker)) return null;
+
+          try {
+            const p = await fetchPrice(ticker, token);
+            return { ...p, name };
+          } catch (e) {
+            failed.push({ ticker, name });
+            return null;
+          }
+        })
+      );
+
+      for (const row of rows.filter(Boolean)) {
+        if (row.cap > 0) resultsByTicker.set(row.ticker, row);
+      }
+
+      if (i + batchSize < candidates.length && i % 100 === 0) {
+        process.stdout.write(`\r[kis] ${market} 가격 조회: ${Math.min(i + batchSize, candidates.length)}/${candidates.length} (실패: ${failed.length})`);
+      }
+      if (i + batchSize < candidates.length) await sleep(delayMs);
     }
-    if (i + batchSize < stocks.length) await new Promise(r => setTimeout(r, delayMs));
-  }
-  process.stdout.write('\n');
+    process.stdout.write('\n');
 
-  // 실패 종목 1회 재시도 (2초 대기 후)
-  if (failed.length) {
-    console.log(`[kis] ${market} 실패 종목 재시도: ${failed.length}개`);
-    await new Promise(r => setTimeout(r, 2000));
-    for (const s of failed) {
-      try {
-        const p = await fetchPrice(s.ticker, token);
-        results.push({ ...p, name: s.name });
-      } catch {}
-      await new Promise(r => setTimeout(r, 300));
-    }
+    const validCount = Array.from(resultsByTicker.values()).filter(r => r.cap > 0).length;
+    const topCount = Math.min(validCount, STOCK_TARGET_COUNT);
+    if (topCount >= STOCK_TARGET_COUNT) break;
+
+    if (!failed.length) break;
+    console.log(`[kis] ${market} TOP${STOCK_TARGET_COUNT} 후보 부족 (${topCount}/${STOCK_TARGET_COUNT}) — 실패 ${failed.length}종목 재시도`);
+    candidates = failed;
+    await sleep(2000 * attempt);
   }
 
-  return results
+  const topStocks = Array.from(resultsByTicker.values())
     .filter(r => r.cap > 0)
     .sort((a, b) => b.cap - a.cap)
-    .slice(0, 100)
+    .slice(0, STOCK_TARGET_COUNT)
     .map(r => ({ ...r, market }));
+
+  if (topStocks.length !== STOCK_TARGET_COUNT) {
+    throw new Error(`TOP${STOCK_TARGET_COUNT} 선정 실패: ${topStocks.length}/${STOCK_TARGET_COUNT}개만 확보`);
+  }
+
+  return topStocks;
 }
 
 // ─── 3단계: 일별 데이터 수집 ───────────────────────────
@@ -324,14 +340,14 @@ async function getRecentTradingDates(ticker, token) {
   return Object.keys(prices).sort().reverse().slice(0, HISTORY_DAYS);
 }
 
-async function enrichMissingHistory(top100, market, token, missingDates, batchSize = 3, delayMs = 700) {
+async function enrichMissingHistory(topStocks, market, token, missingDates, batchSize = 3, delayMs = 700) {
   const results = [];
   const wanted = new Set(missingDates);
   const fromDate = missingDates[missingDates.length - 1];
   const toDate   = missingDates[0];
 
-  for (let i = 0; i < top100.length; i += batchSize) {
-    const batch = top100.slice(i, i + batchSize);
+  for (let i = 0; i < topStocks.length; i += batchSize) {
+    const batch = topStocks.slice(i, i + batchSize);
     const rows = await Promise.all(
       batch.map(async s => {
         try {
@@ -366,7 +382,7 @@ async function enrichMissingHistory(top100, market, token, missingDates, batchSi
       })
     );
     results.push(...rows.flat());
-    if (i + batchSize < top100.length) await sleep(delayMs);
+    if (i + batchSize < topStocks.length) await sleep(delayMs);
   }
   return results;
 }
@@ -417,27 +433,30 @@ async function collectStockDataInternal() {
       // 1. MST에서 일반주 티커 목록 다운로드
       const tickers = await downloadStockTickers(market);
 
-      // 2. 전체 시가총액 조회 → TOP 100 선정
+      // 2. 전체 시가총액 조회 → TOP 종목 선정
       console.log(`[kis] ${market} 시가총액 조회 시작 (${tickers.length}종목)…`);
-      const top100 = await fetchTop100ByPrice(tickers, market, token);
-      if (!top100.length) throw new Error('TOP100 종목을 찾지 못했습니다');
-      console.log(`[kis] ${market} TOP100 선정 완료 — 1위 시총: ${(top100[0]?.cap / 1e12).toFixed(1)}조원`);
+      const topStocks = await fetchTopStocksByPrice(tickers, market, token);
+      console.log(`[kis] ${market} TOP${STOCK_TARGET_COUNT} 선정 완료 (${topStocks.length}개) — 1위 시총: ${(topStocks[0]?.cap / 1e12).toFixed(1)}조원`);
 
-      // 3. 최근 14거래일 중 DB에 없는 날짜만 수집
-      const tradingDates = await getRecentTradingDates(top100[0].ticker, token);
+      // 3. 최근 14거래일 중 DB에 없거나 TOP 종목 수가 부족한 날짜만 수집
+      const tradingDates = await getRecentTradingDates(topStocks[0].ticker, token);
       const pruned = deleteStockDaysOutsideDates(market, tradingDates);
       if (pruned) console.log(`[kis] ${market} 최근 거래일 밖 데이터 ${pruned}건 삭제`);
 
       const existingDates = new Set(getStockDates(market));
-      const missingDates = tradingDates.filter(date => !existingDates.has(date));
+      const coverage = getStockCoverageByDate(market, tradingDates, topStocks.map(s => s.ticker));
+      const missingDates = tradingDates.filter(date => {
+        if (!existingDates.has(date)) return true;
+        return (coverage[date] || 0) < STOCK_TARGET_COUNT;
+      });
 
       if (!missingDates.length) {
-        console.log(`[kis] ${market} 최근 ${HISTORY_DAYS}거래일 데이터 이미 적재됨`);
+        console.log(`[kis] ${market} 최근 ${HISTORY_DAYS}거래일 TOP${STOCK_TARGET_COUNT} 데이터 이미 적재됨`);
         continue;
       }
 
-      console.log(`[kis] ${market} 누락 거래일 ${missingDates.length}개 수집: ${missingDates.join(', ')}`);
-      const rows = await enrichMissingHistory(top100, market, token, missingDates);
+      console.log(`[kis] ${market} 누락/부족 거래일 ${missingDates.length}개 수집: ${missingDates.join(', ')}`);
+      const rows = await enrichMissingHistory(topStocks, market, token, missingDates);
       saveStockDays(rows);
       summary[market.toLowerCase()] = rows.length;
       console.log(`[kis] ${market} 저장 완료 — ${rows.length}건`);

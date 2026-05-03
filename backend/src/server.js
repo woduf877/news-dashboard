@@ -20,6 +20,7 @@ const {
   getAnalysisStatus,
   getStockSummary,
   getStockTimeSeries,
+  getStockRawRows,
   getMarketDailySeries,
 } = require('./db');
 const {
@@ -179,6 +180,36 @@ function getNextCrawlTimes(now) {
   return results.sort();
 }
 
+function csvCell(value) {
+  if (value == null) return '';
+  const text = String(value);
+  return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+function stockRawRowsToCsv(rows) {
+  const columns = [
+    ['market', '시장'],
+    ['trade_date', '거래일'],
+    ['ticker', '종목코드'],
+    ['name', '종목명'],
+    ['close', '종가'],
+    ['cap', '시가총액'],
+    ['inst_buy', '기관매수'],
+    ['inst_sell', '기관매도'],
+    ['inst_net', '기관순매수'],
+    ['for_buy', '외국인매수'],
+    ['for_sell', '외국인매도'],
+    ['for_net', '외국인순매수'],
+    ['total_net', '기관외국인순매수'],
+  ];
+
+  const header = columns.map(([, label]) => csvCell(label)).join(',');
+  const body = rows.map(row =>
+    columns.map(([key]) => csvCell(row[key])).join(',')
+  );
+  return [header, ...body].join('\n');
+}
+
 // ─── 주가 데이터 API ─────────────────────────────────
 
 // 시장 전체 일별 수급 비율 (시장 차트용)
@@ -191,7 +222,7 @@ app.get('/api/stocks/market-series', (req, res) => {
   }
 });
 
-// 시총 TOP100 누적 수급 비율 목록 (종목 리스트용)
+// 시총 TOP150 누적 수급 비율 목록 (종목 리스트용)
 app.get('/api/stocks/summary', (req, res) => {
   const market = (req.query.market || 'KOSPI').toUpperCase();
   try {
@@ -205,6 +236,22 @@ app.get('/api/stocks/summary', (req, res) => {
 app.get('/api/stocks/series/:ticker', (req, res) => {
   try {
     res.json({ ok: true, data: getStockTimeSeries(req.params.ticker) });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// 시장별 stock_daily 원천 데이터 CSV 다운로드 (엑셀 호환)
+app.get('/api/stocks/raw-export', (req, res) => {
+  const market = (req.query.market || 'KOSPI').toUpperCase();
+  try {
+    const rows = getStockRawRows(market);
+    const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const filename = `stock_raw_${market}_${stamp}.csv`;
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(`\uFEFF${stockRawRowsToCsv(rows)}`);
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
   }

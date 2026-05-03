@@ -104,6 +104,7 @@ export default function StockData() {
   const [stockSeries,  setStockSeries]  = useState([]);
   const [loading,      setLoading]      = useState(true);
   const [collecting,   setCollecting]   = useState(false);
+  const [downloading,  setDownloading]  = useState(false);
   const [collectStatus, setCollectStatus] = useState(null);
   const wasCollectingRef = useRef(false);
 
@@ -186,6 +187,28 @@ export default function StockData() {
     }
   };
 
+  const handleDownloadRaw = async () => {
+    setDownloading(true);
+    try {
+      const res = await fetch(`/api/stocks/raw-export?market=${market}`);
+      if (!res.ok) throw new Error('download failed');
+
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      const disposition = res.headers.get('content-disposition') || '';
+      const match = disposition.match(/filename="?([^"]+)"?/);
+      link.href = url;
+      link.download = match?.[1] || `stock_raw_${market}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   // 정렬 + 검색
   const ranked = [...summary]
     .filter(s => !search.trim() || s.name.includes(search) || s.ticker.includes(search))
@@ -249,6 +272,10 @@ export default function StockData() {
           className="px-4 py-2 rounded-xl text-xs font-semibold border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 transition-colors">
           {isCollecting ? '수집 중…' : '🔄 지금 수집'}
         </button>
+        <button onClick={handleDownloadRaw} disabled={loading || downloading}
+          className="px-4 py-2 rounded-xl text-xs font-semibold border border-emerald-200 dark:border-emerald-800 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 disabled:opacity-50 transition-colors">
+          {downloading ? '다운로드 중…' : '엑셀 다운로드'}
+        </button>
       </div>
 
       {loading ? (
@@ -302,7 +329,7 @@ export default function StockData() {
               <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-800 space-y-2">
                 <div className="flex items-center justify-between gap-3">
                   <p className="text-sm font-bold text-gray-700 dark:text-gray-200">
-                    시총 TOP100 · 2주 누적 수급
+                    시총 TOP150 · 2주 누적 수급
                     <span className="text-xs font-normal text-gray-400 ml-2">{ranked.length}개</span>
                   </p>
                   <div className="flex items-center gap-1 shrink-0">

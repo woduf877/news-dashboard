@@ -6,6 +6,7 @@ const DATA_DIR = path.join(__dirname, '..', 'data');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
 const db = new Database(path.join(DATA_DIR, 'news.db'));
+const STOCK_TARGET_COUNT = 150;
 
 // WAL 모드로 성능 향상
 db.pragma('journal_mode = WAL');
@@ -383,7 +384,25 @@ function getStockDates(market) {
   `).all(market).map(r => r.trade_date);
 }
 
-// 특정 날짜의 시총 TOP 100 (+ 14일 누적 순매수 계산)
+// 날짜별 TOP 종목 적재 수 조회 (기존 날짜가 TOP 수량보다 부족한지 확인)
+function getStockCoverageByDate(market, dates, tickers) {
+  if (!dates.length || !tickers.length) return {};
+  const datePlaceholders = dates.map(() => '?').join(',');
+  const tickerPlaceholders = tickers.map(() => '?').join(',');
+
+  const rows = db.prepare(`
+    SELECT trade_date, COUNT(DISTINCT ticker) AS count
+    FROM stock_daily
+    WHERE market = ?
+      AND trade_date IN (${datePlaceholders})
+      AND ticker IN (${tickerPlaceholders})
+    GROUP BY trade_date
+  `).all(market, ...dates, ...tickers);
+
+  return Object.fromEntries(rows.map(r => [r.trade_date, r.count]));
+}
+
+// 특정 날짜의 시총 TOP 종목 (+ 14일 누적 순매수 계산)
 function getStockSummary(market) {
   // 최신 날짜
   const latestRow = db.prepare(`
@@ -394,15 +413,15 @@ function getStockSummary(market) {
 
   const latest = latestRow.trade_date;
 
-  // 최신일 기준 시총 TOP 100 종목 목록
-  const top100 = db.prepare(`
+  // 최신일 기준 시총 TOP 종목 목록
+  const topStocks = db.prepare(`
     SELECT ticker, name FROM stock_daily
     WHERE market = ? AND trade_date = ?
-    ORDER BY cap DESC LIMIT 100
-  `).all(market, latest);
+    ORDER BY cap DESC LIMIT ?
+  `).all(market, latest, STOCK_TARGET_COUNT);
 
-  if (!top100.length) return [];
-  const tickers = top100.map(r => r.ticker);
+  if (!topStocks.length) return [];
+  const tickers = topStocks.map(r => r.ticker);
   const placeholders = tickers.map(() => '?').join(',');
 
   // 14일 누적 데이터
@@ -420,7 +439,7 @@ function getStockSummary(market) {
   `).all(latest, latest, market, ...tickers);
 
   // 최신일 종목명 조인
-  const nameMap = Object.fromEntries(top100.map(r => [r.ticker, r.name]));
+  const nameMap = Object.fromEntries(topStocks.map(r => [r.ticker, r.name]));
 
   return rows.map(r => ({
     ticker:       r.ticker,
@@ -454,18 +473,41 @@ function getStockTimeSeries(ticker) {
   `).all(ticker);
 }
 
-// 시장 전체 일별 집계 (TOP 100 합산)
+// 시장별 stock_daily 원천 데이터 다운로드용
+function getStockRawRows(market) {
+  return db.prepare(`
+    SELECT
+      market,
+      trade_date,
+      ticker,
+      name,
+      close,
+      cap,
+      inst_buy,
+      inst_sell,
+      inst_buy - inst_sell AS inst_net,
+      for_buy,
+      for_sell,
+      for_buy - for_sell AS for_net,
+      inst_buy - inst_sell + for_buy - for_sell AS total_net
+    FROM stock_daily
+    WHERE market = ?
+    ORDER BY trade_date DESC, cap DESC, ticker ASC
+  `).all(market);
+}
+
+// 시장 전체 일별 집계 (TOP 종목 합산)
 function getMarketDailySeries(market) {
-  const top100 = db.prepare(`
+  const topStocks = db.prepare(`
     SELECT ticker FROM stock_daily
     WHERE market = ? AND trade_date = (
       SELECT MAX(trade_date) FROM stock_daily WHERE market = ?
     )
-    ORDER BY cap DESC LIMIT 100
-  `).all(market, market).map(r => r.ticker);
+    ORDER BY cap DESC LIMIT ?
+  `).all(market, market, STOCK_TARGET_COUNT).map(r => r.ticker);
 
-  if (!top100.length) return [];
-  const ph = top100.map(() => '?').join(',');
+  if (!topStocks.length) return [];
+  const ph = topStocks.map(() => '?').join(',');
 
   return db.prepare(`
     SELECT
@@ -476,7 +518,7 @@ function getMarketDailySeries(market) {
     WHERE market = ? AND ticker IN (${ph})
     GROUP BY trade_date
     ORDER BY trade_date ASC
-  `).all(market, ...top100).map(r => ({
+  `).all(market, ...topStocks).map(r => ({
     trade_date: r.trade_date,
     sumNet:     r.sum_net,
     sumCap:     r.sum_cap,
@@ -601,8 +643,10 @@ module.exports = {
   cleanOldStockDays,
   deleteStockDaysOutsideDates,
   getStockDates,
+  getStockCoverageByDate,
   getStockSummary,
   getStockTimeSeries,
+  getStockRawRows,
   getMarketDailySeries,
   getMarketWindowArticles,
   getMarketHourlyCount,
