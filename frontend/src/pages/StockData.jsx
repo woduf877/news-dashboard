@@ -91,6 +91,150 @@ function EmptyState({ market, onCollect, collecting }) {
   );
 }
 
+function signalClass(signal) {
+  if (['strong_buy', 'buy', 'bullish'].includes(signal)) return 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800';
+  if (['strong_sell', 'sell', 'bearish'].includes(signal)) return 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800';
+  return 'text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700';
+}
+
+function StockAiPanel({
+  aiError,
+  aiLoading,
+  aiPrompt,
+  aiResult,
+  displayStock,
+  market,
+  onAnalyze,
+  onPromptChange,
+}) {
+  const result = aiResult?.result;
+  const context = aiResult?.context;
+  const stockSignals = result?.stockSignals || [];
+  const alerts = result?.divergenceAlerts || [];
+
+  return (
+    <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 p-5 space-y-4">
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <p className="text-sm font-bold text-gray-700 dark:text-gray-200">Groq 수급 분석</p>
+          <p className="text-xs text-gray-400 mt-0.5">
+            stock-analysis-harness.md 기반 · 현재 시장 {market}
+            {displayStock ? ` · 선택 종목 ${displayStock.name}(${displayStock.ticker})` : ''}
+          </p>
+        </div>
+        <span className="px-2.5 py-1 rounded-lg text-[11px] font-semibold border border-orange-200 dark:border-orange-800 bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400">
+          llama-3.3-70b-versatile
+        </span>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-3 items-end">
+        <textarea
+          value={aiPrompt}
+          onChange={e => onPromptChange(e.target.value)}
+          rows={3}
+          placeholder="예: 현재 선택 종목의 수급 신호와 시장 전체 대비 강약을 분석해줘."
+          className="w-full px-3 py-2 rounded-xl text-sm border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-orange-400 resize-y"
+        />
+        <button
+          onClick={onAnalyze}
+          disabled={aiLoading || !aiPrompt.trim()}
+          className="px-4 py-2.5 rounded-xl text-sm font-semibold bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white transition-colors whitespace-nowrap"
+        >
+          {aiLoading ? '분석 중…' : 'Groq 분석 실행'}
+        </button>
+      </div>
+
+      {aiError && (
+        <div className="rounded-xl border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 p-3 text-xs text-red-700 dark:text-red-400">
+          {aiError}
+        </div>
+      )}
+
+      {result && (
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+            <div className="lg:col-span-2 rounded-xl border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50 p-4">
+              <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">시장 수급 요약</p>
+              <p className="text-sm text-gray-700 dark:text-gray-200 leading-relaxed">
+                {result.marketOverview?.summary || '시장 요약 없음'}
+              </p>
+            </div>
+            <div className="rounded-xl border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50 p-4 space-y-1">
+              <p className="text-xs font-semibold text-gray-500 dark:text-gray-400">분석 컨텍스트</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">기준일 {context?.latestDate || result.analysisDate || '-'}</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">뉴스 {context?.articleCount ?? 0}건 · 수급 rows {context?.stockRowCount ?? 0}개</p>
+            </div>
+          </div>
+
+          {(result.topBuySignals?.length || result.topSellSignals?.length) && (
+            <div className="flex flex-wrap gap-2 text-xs">
+              {(result.topBuySignals || []).map(ticker => (
+                <span key={`buy-${ticker}`} className="px-2 py-1 rounded-lg bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800">
+                  매수신호 {ticker}
+                </span>
+              ))}
+              {(result.topSellSignals || []).map(ticker => (
+                <span key={`sell-${ticker}`} className="px-2 py-1 rounded-lg bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800">
+                  매도신호 {ticker}
+                </span>
+              ))}
+            </div>
+          )}
+
+          {stockSignals.length > 0 && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+              {stockSignals.slice(0, 6).map(signal => (
+                <div key={signal.ticker} className="rounded-xl border border-gray-100 dark:border-gray-800 p-4 bg-gray-50/70 dark:bg-gray-800/40">
+                  <div className="flex items-center gap-2 mb-2">
+                    <p className="font-bold text-sm text-gray-800 dark:text-gray-100">{signal.name}</p>
+                    <span className="font-mono text-xs text-gray-400">{signal.ticker}</span>
+                    <span className={`ml-auto px-2 py-0.5 rounded-lg border text-[11px] font-semibold ${signalClass(signal.signal)}`}>
+                      {signal.signal}
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">{signal.supplyDemandComment}</p>
+                  {signal.watchPoint && (
+                    <p className="text-xs text-orange-600 dark:text-orange-400 mt-2">체크: {signal.watchPoint}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {alerts.length > 0 && (
+            <div className="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 p-4">
+              <p className="text-xs font-bold text-amber-700 dark:text-amber-300 mb-2">이상 신호</p>
+              <div className="space-y-1.5">
+                {alerts.slice(0, 5).map(alert => (
+                  <p key={`${alert.ticker}-${alert.issue}`} className="text-xs text-amber-800 dark:text-amber-200">
+                    <span className="font-mono">{alert.ticker}</span> {alert.name} · {alert.issue}: {alert.detail}
+                  </p>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {result.analystNote && (
+            <div className="rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-900/20 p-4">
+              <p className="text-xs font-bold text-emerald-700 dark:text-emerald-300 mb-1">분석가 코멘트</p>
+              <p className="text-sm text-emerald-800 dark:text-emerald-200 leading-relaxed">{result.analystNote}</p>
+            </div>
+          )}
+
+          <details className="rounded-xl border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50">
+            <summary className="cursor-pointer px-4 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400">
+              원본 JSON 보기
+            </summary>
+            <pre className="px-4 pb-4 overflow-x-auto text-[11px] text-gray-600 dark:text-gray-300">
+              {JSON.stringify(result, null, 2)}
+            </pre>
+          </details>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── 메인 ────────────────────────────────────────────────
 
 export default function StockData() {
@@ -107,6 +251,10 @@ export default function StockData() {
   const [collecting,   setCollecting]   = useState(false);
   const [downloading,  setDownloading]  = useState(false);
   const [collectStatus, setCollectStatus] = useState(null);
+  const [aiPrompt, setAiPrompt] = useState('현재 시장 전체 수급과 선택 종목의 기관/외국인/연기금 흐름을 기준으로 강한 신호와 주의할 점을 분석해줘.');
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState(null);
+  const [aiResult, setAiResult] = useState(null);
   const wasCollectingRef = useRef(false);
 
   // 시장 데이터 로드
@@ -251,6 +399,29 @@ export default function StockData() {
   const latestDate = marketSeries[marketSeries.length - 1]?.trade_date;
   const isCollecting = collecting || !!collectStatus?.running;
 
+  const handleStockAiAnalysis = async () => {
+    setAiLoading(true);
+    setAiError(null);
+    try {
+      const res = await fetch('/api/stocks/ai-analysis', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: aiPrompt,
+          market,
+          ticker: displayStock?.ticker || null,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) throw new Error(json.error || 'Groq 분석 요청 실패');
+      setAiResult(json.data);
+    } catch (e) {
+      setAiError(e.message);
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
   return (
     <div className="max-w-screen-xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-5">
 
@@ -332,6 +503,17 @@ export default function StockData() {
               </LineChart>
             </ResponsiveContainer>
           </div>
+
+          <StockAiPanel
+            aiError={aiError}
+            aiLoading={aiLoading}
+            aiPrompt={aiPrompt}
+            aiResult={aiResult}
+            displayStock={displayStock}
+            market={market}
+            onAnalyze={handleStockAiAnalysis}
+            onPromptChange={setAiPrompt}
+          />
 
           {/* 하단: 목록 + 상세 */}
           <div className="grid grid-cols-1 xl:grid-cols-5 gap-5">

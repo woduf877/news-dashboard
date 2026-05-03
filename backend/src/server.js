@@ -23,6 +23,7 @@ const {
 const { getMarketWindow } = require('./marketWindow');
 const { runCrawl, KOREA_MARKET_SOURCES, US_MARKET_SOURCES } = require('./crawler');
 const { runMarketAnalysis } = require('./marketAnalyzer');
+const { runStockAnalysis } = require('./stockAnalysisAgent');
 const { isConfigured } = require('./aiAgent');
 const { startScheduler } = require('./scheduler');
 
@@ -226,6 +227,23 @@ app.get('/api/stocks/diagnose', async (req, res) => {
     res.json({ ok: true, ...result });
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// Groq 기반 주가 수급 분석 에이전트 (stock-analysis-harness.md)
+app.post('/api/stocks/ai-analysis', async (req, res) => {
+  try {
+    const result = await runStockAnalysis({
+      prompt: req.body?.prompt,
+      market: req.body?.market,
+      ticker: req.body?.ticker,
+    });
+    res.json({ ok: true, data: result });
+  } catch (e) {
+    const status = e.message === 'GROQ_API_KEY 미설정' || e.message === '분석 프롬프트를 입력하세요.'
+      ? 400
+      : 500;
+    res.status(status).json({ ok: false, error: e.message });
   }
 });
 
