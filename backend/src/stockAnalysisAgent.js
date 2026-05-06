@@ -104,21 +104,17 @@ function buildStockAnalysisPrompt({ prompt, market = 'KOSPI', ticker = null } = 
     articleCount: newsRows.length,
     stockRowCount: stockRows.length,
     text: `
-=== 분석 요청 ===
+=== 분석 컨텍스트 ===
 기준일: ${latestDate}
-분석 시장: KOSPI + KOSDAQ
-현재 화면 시장: ${market}
-현재 선택 종목: ${ticker || '없음'}
-
-=== 사용자 추가 프롬프트 ===
-${prompt}
+현재 화면: ${market}
+선택 종목: ${ticker || '없음'}
 
 === 시장 전체 수급 시계열 (최근 14거래일) ===
 ${formatMarketSeries('KOSPI', kospiSeries)}
 
 ${formatMarketSeries('KOSDAQ', kosdaqSeries)}
 
-=== 시총 TOP 종목 수급 요약 (14일 누적, Groq 무료 API 한도에 맞춘 압축 컨텍스트) ===
+=== 시총 TOP 종목 수급 요약 (14일 누적) ===
 형식: 순위 | 종목명(코드) | 시장 | 시총(조원) | 14일누적수급비율 | 기관순매수(억원) | 외인순매수(억원) | 연기금순매수(억원)
 
 ${stockRows.join('\n')}
@@ -126,7 +122,11 @@ ${stockRows.join('\n')}
 === 관련 뉴스 (최근 24시간, 수급 해석 보조용) ===
 ${buildNewsText(newsRows)}
 
-위 데이터를 기반으로 stock-analysis-harness.md의 출력 계약을 지키는 수급 분석 JSON을 반환하세요.
+━━━ [사용자 분석 요청] — 최우선 지시 ━━━
+${prompt}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+위 [사용자 분석 요청]에 먼저 답하고 (userFocusResponse 필드), 그 관점에서 수급 분석 JSON을 반환하라.
 `.trim(),
   };
 }

@@ -152,6 +152,13 @@ function StockAiPanel({
 
       {result && (
         <div className="space-y-4">
+          {result.userFocusResponse && (
+            <div className="rounded-xl border border-violet-200 dark:border-violet-700 bg-violet-50 dark:bg-violet-900/20 p-4">
+              <p className="text-xs font-bold text-violet-700 dark:text-violet-300 mb-2">💬 요청 분석 답변</p>
+              <p className="text-sm text-violet-900 dark:text-violet-100 leading-relaxed whitespace-pre-line">{result.userFocusResponse}</p>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
             <div className="lg:col-span-2 rounded-xl border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50 p-4">
               <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">시장 수급 요약</p>
